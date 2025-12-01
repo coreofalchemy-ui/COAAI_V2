@@ -503,7 +503,7 @@ const DetailStorageApp = () => {
                                 }
                             }}
                             style={{
-                                left: '50%',
+                                left: 'calc(50% - 180px)',
                                 top: '100px',
                                 width: viewMode === 'main' ? '860px' : viewMode === 'mobile' ? '375px' : '1200px',
                                 transform: `translate(calc(-50% + ${pan.x}px), ${pan.y}px) scale(${zoom})`,

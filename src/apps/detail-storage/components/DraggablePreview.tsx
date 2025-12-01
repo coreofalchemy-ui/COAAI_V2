@@ -373,10 +373,7 @@ const DraggablePreview: React.FC<DraggablePreviewProps> = ({
                                 )}
                             </div>
                         ) : (
-                            <div
-                                className="text-sm p-2"
-                                dangerouslySetInnerHTML={{ __html: applyTypography(item.content, item.fontSize || 100, item.fontFamily, item.textAlign) }}
-                            />
+                            <div className="text-sm p-2" style={{ minHeight: '50px' }} />
                         )}
 
                         {/* Resize Handle */}

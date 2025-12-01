@@ -117,14 +117,14 @@ async function generateImage(prompt: string, imageParts: Part[]): Promise<string
     const response = await getAiClient().models.generateContent({
         model: MODEL_NAME,
         contents: { parts: allParts },
-        config: { 
+        config: {
             imageConfig: { aspectRatio: "3:4" }
         },
     });
 
     const originalImageUrl = getImageUrlFromResponse(response);
     try {
-        return await enforceAspectRatio(originalImageUrl, 830, 1106); 
+        return await enforceAspectRatio(originalImageUrl, 830, 1106);
     } catch {
         return originalImageUrl;
     }
@@ -158,3 +158,187 @@ export async function refineImage(shoeFiles: File[], modelImageUrl: string): Pro
     const modelImagePart = await urlToGenerativePart(modelImageUrl);
     return generateImage(refineImagePrompt, [modelImagePart, ...shoeImageParts]);
 }
+
+// =================================================================
+// FACE GENERATION LOGIC
+// =================================================================
+
+import { HarmCategory, HarmBlockThreshold } from "@google/genai";
+
+export const generateFaceBatch = async (
+    gender: 'male' | 'female',
+    race: string,
+    age: string
+): Promise<string[]> => {
+    try {
+        const ai = getAiClient();
+        const genderTerm = gender === 'male' ? 'male' : 'female';
+        const isKorean = race === '한국인' || race === '코리안';
+
+        // 1. 인종 매핑
+        const raceMapping: Record<string, string> = {
+            "한국인": "Korean",
+            "코리안": "Korean",
+            "동아시아인": "East Asian",
+            "아시아인": "East Asian",
+            "백인": "Caucasian",
+            "흑인": "Black / African American",
+            "히스패닉": "Hispanic / Latino",
+            "중동인": "Middle Eastern",
+            "혼혈": "Mixed race"
+        };
+        const englishRace = raceMapping[race] || "Korean";
+
+        // 2. 나이 → 피부 디테일 (공통: 관리받은 연예인 피부)
+        const numericAge = parseInt(age, 10);
+        let ageDetails = "";
+
+        if (Number.isNaN(numericAge)) {
+            ageDetails =
+                "Flawless celebrity skin texture, well-managed pores, glass skin effect but realistic.";
+        } else if (numericAge <= 25) {
+            ageDetails =
+                "Youthful high-end model skin, bursting with collagen, natural glow, perfect complexion with realistic micro-texture.";
+        } else if (numericAge <= 35) {
+            ageDetails =
+                "Peak visual skin condition, sophisticated texture, absolutely tight jawline, zero sagging, high-end skincare look.";
+        } else {
+            ageDetails =
+                "Legendary celebrity visual who aged gracefully, extremely well-managed skin, tight facial contours, sharp jawline, charismatic eye wrinkles only, looking much younger than actual age, aristocratic aura.";
+        }
+
+        // 3. 무드 및 스타일 (국적/성별에 따라 분기)
+        let vibeKeywords = "";
+
+        if (gender === 'female') {
+            if (isKorean) {
+                vibeKeywords = "Top-tier K-pop female idol visual, center position vibe, trend-setting beauty, distinct and sharp features, charismatic aura, Seoul fashion editorial.";
+            } else {
+                vibeKeywords = "World-class supermodel, Hollywood actress visual, Exotic and distinctive beauty, High-fashion magazine cover vibe, Sophisticated and elegant, Unique charisma.";
+            }
+        } else { // Male
+            if (isKorean) {
+                vibeKeywords = "Top-tier K-pop male idol visual, center position vibe, sharp and chic, sculpture-like face, distinct T-zone, charismatic aura, Seoul fashion editorial.";
+            } else {
+                vibeKeywords = "Global top male model, Hollywood heartthrob vibe, Razor-sharp masculine features, 'Prince' like elegance, High-end luxury brand campaign look, Intense gaze.";
+            }
+        }
+
+        // 4. 텍스처: AI 인형 느낌 제거하되 고급스럽게
+        const textureKeywords =
+            "hyper-detailed expensive skin texture, visible fine pores, subtle peach fuzz, realistic but perfect complexion, sharp facial structure, distinct lighting on cheekbones";
+
+        // 5. 헤어스타일 및 배경, 메이크업 배열 (랜덤 선택용)
+        // 실제 코드에는 hairStylesMale, studioBackgrounds, makeupStylesFemale/Male 배열이 정의되어 있습니다.
+        // (Simulating random selection for variety)
+        const hairStyles = [
+            "long straight hair with soft layers and natural shine",
+            "medium length trendy cut, clean but modern",
+            "soft wavy hair with natural volume, goddess vibe",
+            "low ponytail with loose front pieces framing the face",
+            "chic bob cut with sophisticated styling"
+        ];
+
+        const promises = Array(4) // Generate 4 images
+            .fill(null)
+            .map(async (_, idx) => {
+                const prompt = `
+[SUBJECT]
+Ultra-detailed close-up portrait of a ${age}-year-old ${englishRace} ${genderTerm}.
+Target Look: Global Top Tier Visual / High-End Fashion Icon.
+Facial Features: Extremely photogenic, Celebrity visual, Distinctive beauty.
+
+[VIBE]
+${vibeKeywords}
+
+[FACE AND SKIN]
+${textureKeywords}
+${ageDetails}
+Natural skin tone, slight variation between forehead, cheeks, and nose.
+Subtle highlight on nose bridge and cheekbones, natural shadow under jawline to emphasize sharp contours.
+Under-eye area stays realistic but bright.
+
+[HAIR]
+Clean hair styling, ${hairStyles[idx % hairStyles.length]}.
+
+[MAKEUP/GROOMING]
+Natural high-end look.
+
+[CROP AND FRAMING]
+Framed from shoulders and neck up, focus on the face.
+No visible clothing logos.
+Neutral, non-sexual presentation.
+
+[BACKGROUND]
+Simple studio background.
+Clean, and even lighting.
+
+[STYLE]
+High-end fashion photoshoot / Album concept photo.
+Shot on a professional digital camera or high-end film camera.
+Direct or semi-direct soft flash to give trendy high-fashion look.
+Full color only.
+Minimal retouching, keep skin texture and pores visible but maintain celebrity perfection.
+
+[AVOID]
+Do not make the face look like an AI-generated doll.
+Do not over-smooth the skin.
+No anime style, no illustration, no 3D render.
+No uncanny valley eyes, no extreme symmetry, no plastic shine.
+          `;
+
+                const response = await ai.models.generateContent({
+                    model: MODEL_NAME,
+                    contents: { parts: [{ text: prompt }] },
+                    config: {
+                        imageConfig: { aspectRatio: '1:1' }, // 1K is default or handled by aspect ratio? API doesn't have imageSize in config usually, but user snippet had it. I'll stick to aspectRatio.
+                        safetySettings: [
+                            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+                        ]
+                    }
+                });
+
+                return getImageUrlFromResponse(response);
+            });
+
+        return Promise.all(promises);
+    } catch (e) {
+        throw e;
+    }
+};
+
+// 2. 4K 업스케일링 함수
+export const upscaleFace = async (base64Image: string): Promise<string> => {
+    try {
+        const ai = getAiClient();
+        const dataPart = base64Image.split(',')[1] || base64Image;
+
+        const prompt = `
+      [TASK: UPSCALE & ENHANCE]
+      Re-generate this portrait in 4K resolution.
+      Maintain the exact same face, identity, pose, lighting, and composition.
+      Significantly improve skin texture, hair details, and eye sharpness.
+      Make it look like a high-end commercial beauty shot.
+      Output: High-fidelity 4K photograph.
+    `;
+
+        const response = await ai.models.generateContent({
+            model: MODEL_NAME,
+            contents: {
+                parts: [
+                    { inlineData: { mimeType: 'image/png', data: dataPart } }, // 원본 이미지 전달
+                    { text: prompt }
+                ]
+            },
+            config: {
+                imageConfig: { aspectRatio: '1:1' }, // 4K logic might need specific handling if API supports it, otherwise it just generates high res
+                safetySettings: [
+                    { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+                ]
+            }
+        });
+        return getImageUrlFromResponse(response);
+    } catch (e) {
+        throw e;
+    }
+};

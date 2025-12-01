@@ -8,6 +8,7 @@ import { DragDropUpload } from '../../components/shared/DragDropUpload';
 import { Navigation } from '../../components/shared/Navigation';
 import { Trash2Icon, DownloadIcon, SparklesIcon, XIcon, StarIcon, CheckSquareIcon, FileDownIcon, ChevronRightIcon } from './components/icons';
 import { FaceLibrarySelector } from './components/FaceLibrarySelector';
+import { FaceGenerator } from './components/FaceGenerator';
 
 type GeneratedModel = {
     id: string;
@@ -43,6 +44,7 @@ export const ModelGeneratorApp: React.FC = () => {
     const [progress, setProgress] = useState({ current: 0, total: 0 });
     const [loadingMessage, setLoadingMessage] = useState('');
     const [error, setError] = useState<string | null>(null);
+    const [showFaceGenerator, setShowFaceGenerator] = useState(false);
 
     const handleShoeSelect = (files: File[]) => {
         if (files.length === 0) return;
@@ -260,13 +262,60 @@ export const ModelGeneratorApp: React.FC = () => {
                                         label="얼굴 사진 업로드"
                                         description="정면 고해상도 사진 권장"
                                     />
-                                    <FaceLibrarySelector
-                                        gender="w"
-                                        onSelectFace={handleFaceFromLibrary}
-                                    />
+
+                                    <div className="mt-4 pt-4 border-t border-[#F0F0F0]">
+                                        <div className="text-xs font-bold text-gray-400 mb-2 uppercase tracking-wider">AI Tools</div>
+                                        <button
+                                            onClick={() => setShowFaceGenerator(true)}
+                                            className="w-full py-3 bg-blue-50 text-blue-600 border border-blue-100 rounded-lg hover:bg-blue-100 transition-colors flex items-center justify-center gap-2 font-medium text-sm"
+                                        >
+                                            <SparklesIcon className="w-4 h-4" />
+                                            AI 얼굴 생성기 열기
+                                        </button>
+                                        <div className="mt-2">
+                                            <FaceLibrarySelector
+                                                gender="w"
+                                                onSelectFace={handleFaceFromLibrary}
+                                            />
+                                        </div>
+                                    </div>
                                 </>
                             )}
                         </section>
+
+                        {/* Face Generator Modal */}
+                        <AnimatePresence>
+                            {showFaceGenerator && (
+                                <motion.div
+                                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                                    className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-8"
+                                >
+                                    <div className="bg-white w-full max-w-6xl h-[80vh] rounded-xl overflow-hidden shadow-2xl relative flex flex-col">
+                                        <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-white z-10">
+                                            <h2 className="font-display text-xl font-bold flex items-center gap-2">
+                                                <SparklesIcon className="w-5 h-5 text-blue-600" />
+                                                AI Face Studio
+                                            </h2>
+                                            <button
+                                                onClick={() => setShowFaceGenerator(false)}
+                                                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                                            >
+                                                <XIcon className="w-6 h-6" />
+                                            </button>
+                                        </div>
+                                        <div className="flex-1 overflow-hidden">
+                                            <FaceGenerator
+                                                onFaceSelected={(file, url) => {
+                                                    setFaceFile(file);
+                                                    setFaceImageUrl(url);
+                                                    setShowFaceGenerator(false);
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
 
                         {/* 3. Model Upload */}
                         <section>

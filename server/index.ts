@@ -4,12 +4,25 @@ import dotenv from 'dotenv';
 import facesRouter from './routes/faces.js';
 import geminiRouter from './routes/gemini.js';
 import { checkBucketAccess } from './gcsClient.js';
+import fs from 'fs';
+import path from 'path';
 
 // Load environment variables
 dotenv.config();
 
+function logToFile(msg: string) {
+    const logPath = 'c:/Users/user/Desktop/coa/ai-fashion-hub-main/debug_absolute.log';
+    try {
+        fs.appendFileSync(logPath, msg + '\n');
+    } catch (e) {
+        // ignore
+    }
+}
+
+logToFile('index.ts loaded');
+
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = 3002;
 
 // Middleware
 app.use(cors({
@@ -31,13 +44,17 @@ app.get('/health', (req, res) => {
 
 // GCS connection check endpoint
 app.get('/api/status', async (req, res) => {
+    logToFile('API Status endpoint called');
     try {
+        logToFile('Calling checkBucketAccess...');
         const bucketAccessible = await checkBucketAccess();
+        logToFile(`checkBucketAccess returned: ${bucketAccessible}`);
         res.json({
             gcs: bucketAccessible ? 'connected' : 'disconnected',
             bucket: process.env.GCS_BUCKET_NAME || 'coa-lookbook-assets',
         });
     } catch (error) {
+        logToFile(`Error in API status: ${error}`);
         res.status(500).json({
             gcs: 'error',
             error: error instanceof Error ? error.message : 'Unknown error',

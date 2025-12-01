@@ -494,8 +494,8 @@ export const generateFaceBatch = async (
         const faceDescription = gender === 'male' ? "Sharp jawline, symmetrical features, masculine but clean" : "Small face, symmetrical features, feminine and elegant";
         const sectionTitle = gender === 'male' ? "[GROOMING & STYLING]" : "[MAKEUP]";
 
-        // 5. Generate 5 images in parallel
-        const promises = Array(5)
+        // 5. Generate 4 images in parallel
+        const promises = Array(4)
             .fill(null)
             .map(async (_, idx) => {
                 try {
@@ -698,7 +698,7 @@ export const swapFace = async (
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
-        model: 'gemini-2.0-flash-exp', // Reverted to Gemini 2.0 Flash
+        model: 'gemini-2.0-flash-exp',
         generationConfig: {
             temperature: 0.4,
             topP: 0.95,
@@ -713,19 +713,42 @@ export const swapFace = async (
     const targetData = targetBase64.split(',')[1] || targetBase64;
 
     const prompt = `
-                    [TASK: FACE SWAP]
-Replace the face of the model in the[TARGET IMAGE]with the face from the[SOURCE FACE].
-                    1. ** Identity:** The face in the output MUST match the[SOURCE FACE]identity.
-2. ** Context:** Keep the[TARGET IMAGE]body, pose, hair(if possible / relevant), clothing, and background EXACTLY the same.
-3. ** Blending:** Match the skin tone, lighting, and grain of the[TARGET IMAGE]for a seamless photorealistic result.
-4. ** Output:** High - fidelity photograph.
-5. ** FORMAT:** Generate an IMAGE. Do not output text.
+**SYSTEM ROLE:** "NanoBanana 3.0" - Advanced Photorealistic Compositing Engine.
+**TASK:** Synthesize the [SOURCE FACE] onto the [BASE MODEL BODY].
+
+**[CRITICAL ALGORITHM: SKULL CLAMPING]**
+1.  **GEOMETRY LOCK:** The [BASE MODEL]'s head shape, skull size, and jawline width are the **IMMUTABLE CONTAINER**.
+2.  **FIT:** You MUST warp/shrink/resize the [SOURCE FACE] to fit *inside* the [BASE MODEL]'s original head boundaries.
+    *   *Strict Rule:* The resulting head size MUST NOT exceed the original base model's head size.
+3.  **ALIGNMENT:** Align eyes and mouth to the [BASE MODEL]'s original facial landmarks.
+
+**[LIGHTING MAP TRANSFER]**
+1.  **ANALYSIS:** Analyze the lighting direction, shadow hardness, and color temperature on the [BASE MODEL]'s neck and shoulders.
+2.  **TRANSFER:** Apply this *exact* lighting map to the new face.
+    *   *Shadows:* If the neck has a hard shadow on the left, the face MUST have a matching hard shadow on the left.
+    *   *Tone:* Match the skin undertone (Cool/Warm) of the body exactly.
+
+**[RESOLUTION MATCHING & GRAIN]**
+1.  **DOWNSAMPLING:** The [SOURCE FACE] is likely higher resolution than the body. You MUST **degrade** the face quality to match the body.
+2.  **GRAIN MATCHING:** Analyze the ISO noise/film grain of the [BASE MODEL]'s clothing. Apply the SAME noise pattern to the face.
+3.  **NO "GLOW":** The face should NOT look brighter or smoother than the body. It must look like it was shot with the same camera, same lens, at the same time.
+
+**[EXPRESSION & MANNER]**
+1.  **EXPRESSION:** Ignore the [SOURCE FACE]'s expression. **COPY THE [BASE MODEL]'s ORIGINAL EXPRESSION.**
+    *   If Base Model is smiling, the result must smile.
+    *   If Base Model is serious, the result must be serious.
+2.  **VIBE:** The final image must retain the exact "Mood" and "Atmosphere" of the [BASE MODEL] photo.
+
+**[OUTPUT RULES]**
+*   **SHOES:** The shoes in the [BASE MODEL] photo must be preserved 100% pixel-perfect.
+*   **CLOTHING:** Do not change the clothing.
+*   **FORMAT:** Generate a high-quality PHOTOGRAPH. Do not output text.
 `;
 
     const result = await model.generateContent([
-        { text: "SOURCE FACE:" },
+        { text: "SOURCE FACE (High Res Identity):" },
         { inlineData: { mimeType: sourceMime, data: sourceData } },
-        { text: "TARGET IMAGE:" },
+        { text: "BASE MODEL (Geometry & Lighting Reference):" },
         { inlineData: { mimeType: targetImageFile.type, data: targetData } },
         { text: prompt }
     ]);

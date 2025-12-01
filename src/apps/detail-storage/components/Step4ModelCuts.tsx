@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { generateFaceBatch, upscaleFace, swapFace } from '../services/geminiService';
+import { generateFaceBatch, swapFace } from '../services/geminiService';
 
 interface UploadedImage {
     file: File;
@@ -27,8 +27,7 @@ const Step4ModelCuts: React.FC<Step4ModelCutsProps> = ({ productImages, onAddToP
     const [age, setAge] = useState<ModelAge>('25');
     const [ethnicity, setEthnicity] = useState<ModelEthnicity>('한국인');
     const [generatedFaces, setGeneratedFaces] = useState<string[]>([]);
-    const [selectedFace, setSelectedFace] = useState<string | null>(null);
-    const [upscaledImage, setUpscaledImage] = useState<string | null>(null);
+    const [previewFace, setPreviewFace] = useState<string | null>(null);
 
     // Reference Photos State
     const [referencePhotos, setReferencePhotos] = useState<UploadedImage[]>([]);
@@ -39,7 +38,7 @@ const Step4ModelCuts: React.FC<Step4ModelCutsProps> = ({ productImages, onAddToP
 
     // Loading States
     const [isGenerating, setIsGenerating] = useState(false);
-    const [isUpscaling, setIsUpscaling] = useState(false);
+
     const [isSwapping, setIsSwapping] = useState(false);
 
     // Face Gallery Modal State
@@ -102,7 +101,7 @@ const Step4ModelCuts: React.FC<Step4ModelCutsProps> = ({ productImages, onAddToP
         setIsGenerating(true);
         setGeneratedFaces([]);
         setSelectedFace(null);
-        setUpscaledImage(null);
+        setSelectedFace(null);
 
         try {
             const images = await generateFaceBatch(gender, ethnicity, age);
@@ -119,30 +118,17 @@ const Step4ModelCuts: React.FC<Step4ModelCutsProps> = ({ productImages, onAddToP
         }
     };
 
-    const handleUpscale = async () => {
-        if (!selectedFace || isUpscaling) return;
 
-        setIsUpscaling(true);
-        try {
-            const result = await upscaleFace(selectedFace);
-            setUpscaledImage(result);
-            alert("4K 업스케일링 완료!");
-        } catch (error: any) {
-            alert(`업스케일링 오류: ${error.message}`);
-        } finally {
-            setIsUpscaling(false);
-        }
-    };
 
     // Face Swap Process
     const handleFaceSwap = async () => {
-        const sourceFace = faceSource === 'upload' ? uploadedFace?.previewUrl : (upscaledImage || selectedFace);
+        const sourceFace = faceSource === 'upload' ? uploadedFace?.previewUrl : selectedFace;
 
         console.log('=== Face Swap Debug ===');
         console.log('faceSource:', faceSource);
         console.log('uploadedFace:', uploadedFace);
         console.log('selectedFace:', selectedFace);
-        console.log('upscaledImage:', upscaledImage);
+
         console.log('sourceFace:', sourceFace);
         console.log('referencePhotos:', referencePhotos);
 
@@ -310,7 +296,7 @@ const Step4ModelCuts: React.FC<Step4ModelCutsProps> = ({ productImages, onAddToP
                             disabled={isGenerating}
                             className="w-full py-3 bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 text-white font-bold rounded-lg disabled:opacity-50 transition-all text-sm"
                         >
-                            {isGenerating ? '생성 중...' : '얼굴 5개 생성하기'}
+                            {isGenerating ? '생성 중...' : '얼굴 4개 생성하기'}
                         </button>
                     </div>
                 )}
@@ -333,7 +319,7 @@ const Step4ModelCuts: React.FC<Step4ModelCutsProps> = ({ productImages, onAddToP
                         <div className="flex flex-col items-center justify-center py-12">
                             <div className="animate-spin rounded-full h-12 w-12 border-4 border-pink-200 border-t-pink-600 mb-3"></div>
                             <p className="text-sm font-medium text-gray-700">AI 얼굴 생성 중...</p>
-                            <p className="text-xs text-gray-500 mt-1">5개의 얼굴을 만들고 있습니다</p>
+                            <p className="text-xs text-gray-500 mt-1">4개의 얼굴을 만들고 있습니다</p>
                         </div>
                     )}
 
@@ -342,7 +328,7 @@ const Step4ModelCuts: React.FC<Step4ModelCutsProps> = ({ productImages, onAddToP
                         <div className="flex flex-col items-center justify-center py-12 border-2 border-dashed border-pink-200 rounded-lg">
                             <div className="text-5xl mb-3">👤</div>
                             <p className="text-sm font-medium text-gray-700">생성된 얼굴 없음</p>
-                            <p className="text-xs text-gray-500 mt-1">위 설정을 선택하고 "얼굴 5개 생성하기" 버튼을 눌러주세요</p>
+                            <p className="text-xs text-gray-500 mt-1">위 설정을 선택하고 "얼굴 4개 생성하기" 버튼을 눌러주세요</p>
                         </div>
                     )}
 
@@ -360,41 +346,7 @@ const Step4ModelCuts: React.FC<Step4ModelCutsProps> = ({ productImages, onAddToP
                         </button>
                     )}
 
-                    {/* Selected Face Preview */}
-                    {selectedFace && !isGenerating && (
-                        <div className="p-3 bg-white rounded-lg border-2 border-pink-300">
-                            <p className="text-xs font-semibold text-pink-700 mb-2">✓ 얼굴 선택됨</p>
-                            <img src={selectedFace} alt="Selected" className="w-full rounded-lg" />
-                            {!upscaledImage && (
-                                <button
-                                    onClick={handleUpscale}
-                                    disabled={isUpscaling}
-                                    className="w-full mt-2 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-lg disabled:opacity-50 text-sm transition-all"
-                                >
-                                    {isUpscaling ? '업스케일 중...' : '✨ 4K 업스케일'}
-                                </button>
-                            )}
-                            {upscaledImage && (
-                                <div className="mt-2 space-y-2">
-                                    <p className="text-xs font-semibold text-emerald-700">✓ 4K 업스케일 완료!</p>
-                                    <div className="flex gap-2">
-                                        <button
-                                            onClick={() => setModalImage(upscaledImage)}
-                                            className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium rounded text-xs"
-                                        >
-                                            크게 보기
-                                        </button>
-                                        <button
-                                            onClick={() => downloadImage(upscaledImage, `face-4k-${Date.now()}.png`)}
-                                            className="flex-1 py-2 bg-gray-800 hover:bg-gray-700 text-white font-medium rounded text-xs"
-                                        >
-                                            다운로드
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    )}
+
                 </div>
             )}
 
@@ -456,7 +408,7 @@ const Step4ModelCuts: React.FC<Step4ModelCutsProps> = ({ productImages, onAddToP
             {swappedResults.length > 0 && (
                 <div className="bg-white p-4 rounded-lg border-2 border-green-200 space-y-3">
                     <h4 className="text-sm font-bold text-gray-900">합성 결과 ({swappedResults.length}개)</h4>
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="flex flex-col space-y-8">
                         {swappedResults.map((result, idx) => (
                             <div key={idx} className="relative group">
                                 <img
@@ -574,13 +526,12 @@ const Step4ModelCuts: React.FC<Step4ModelCutsProps> = ({ productImages, onAddToP
                             </button>
                         </div>
 
-                        <div className="grid grid-cols-3 gap-6 mb-8">
+                        <div className="grid grid-cols-2 gap-6 mb-8">
                             {generatedFaces.map((face, idx) => (
                                 <div
                                     key={idx}
                                     onClick={() => {
-                                        setSelectedFace(face);
-                                        setUpscaledImage(null);
+                                        setPreviewFace(face);
                                     }}
                                     className={`relative rounded-2xl overflow-hidden cursor-pointer transition-all ${selectedFace === face ? 'ring-8 ring-pink-500 shadow-2xl' : 'ring-4 ring-white/20 hover:ring-white/40'
                                         }`}
@@ -622,7 +573,97 @@ const Step4ModelCuts: React.FC<Step4ModelCutsProps> = ({ productImages, onAddToP
                         </div>
                     </div>
                 </div>
+            {/* Single Face Preview Modal */}
+            {previewFace && (
+                <div
+                    className="fixed inset-0 bg-black/95 flex items-center justify-center z-[60] p-8"
+                    onClick={() => setPreviewFace(null)}
+                >
+                    <div className="relative w-full max-w-2xl bg-white rounded-2xl overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                        <div className="p-6">
+                            <h3 className="text-2xl font-bold text-gray-900 mb-4">이 모델 사용하기</h3>
+                            <div className="aspect-square rounded-xl overflow-hidden mb-6 border-2 border-gray-100">
+                                <img src={previewFace} alt="Preview" className="w-full h-full object-cover" />
+                            </div>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => {
+                                        setSelectedFace(previewFace);
+                                        setPreviewFace(null);
+                                        setShowFaceGallery(false);
+                                        // Trigger synthesis immediately if references exist
+                                        if (referencePhotos.length > 0) {
+                                            // We need to set selectedFace state first, but state updates are async.
+                                            // So we pass the face directly to a modified handleFaceSwap or handle it here.
+                                            // Since handleFaceSwap uses state, we might need to wait or pass args.
+                                            // Let's modify handleFaceSwap to accept an optional face override.
+                                            // For now, I'll just set it and alert the user to click synthesize, OR
+                                            // I can call the synthesis logic directly here.
+                                            // But handleFaceSwap is complex.
+                                            // Let's try to call handleFaceSwap with the face.
+                                            // But handleFaceSwap reads from state.
+                                            // I will refactor handleFaceSwap to accept an argument in a separate step or just rely on state?
+                                            // State update won't be immediate.
+                                            // I will modify handleFaceSwap to take an optional argument.
+                                            // Wait, I can't modify handleFaceSwap in this chunk easily without replacing it.
+                                            // I'll just set the state and click the button programmatically? No, that's hacky.
+                                            // I'll just set the state and close the modal, and the user can click synthesize?
+                                            // User said: "Use model -> Synthesized and output".
+                                            // So it MUST be automatic.
+                                            // I will use a setTimeout or useEffect? No.
+                                            // I will copy the logic of handleFaceSwap here or refactor handleFaceSwap.
+                                            // Refactoring handleFaceSwap is safer.
+                                            // But I am in a multi_replace.
+                                            // I will just implement the synthesis call here directly using the service.
+                                            // Or better: I will update handleFaceSwap to accept an override.
+                                            // I'll do that in a separate replace call if needed, or just assume I can pass it?
+                                            // No, handleFaceSwap signature is () => void.
+                                            // I will add a hidden button to trigger it? No.
+                                            // I will just set the state and let the user click?
+                                            // "합성이 되어서 출력이 되어야지" implies automatic.
+                                            // I will try to call the service directly here.
+                                            // Actually, I can just call `swapFace` here loop over referencePhotos.
+                                            // It duplicates logic but ensures it works immediately.
+                                            // Let's duplicate the loop logic for now to be safe and fast.
+
+                                            setIsSwapping(true);
+                                            setSwappedResults([]);
+
+                                            (async () => {
+                                                try {
+                                                    const results = await Promise.all(
+                                                        referencePhotos.map(async (refPhoto) => {
+                                                            return await swapFace(previewFace, refPhoto.file);
+                                                        })
+                                                    );
+                                                    setSwappedResults(results);
+                                                    alert(`✅ ${results.length}개의 합성 이미지가 생성되었습니다!`);
+                                                } catch (error: any) {
+                                                    alert(`❌ 페이스 스왑 오류: ${error.message}`);
+                                                } finally {
+                                                    setIsSwapping(false);
+                                                }
+                                            })();
+                                        } else {
+                                            alert("레퍼런스 모델 사진을 먼저 업로드해주세요!");
+                                        }
+                                    }}
+                                    className="flex-1 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold rounded-xl shadow-lg transition-all"
+                                >
+                                    이 모델로 합성하기
+                                </button>
+                                <button
+                                    onClick={() => setPreviewFace(null)}
+                                    className="flex-1 py-4 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-xl transition-all"
+                                >
+                                    취소
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             )}
+
         </div>
     );
 };
