@@ -34,12 +34,14 @@ export default function StartScreen({ onGenerate, isLoading }: any) {
 
     const handleDrop = (e: React.DragEvent, type: 'product' | 'model') => {
         e.preventDefault();
+        e.stopPropagation();
         setDragOver(null);
         handleFiles(e.dataTransfer.files, type);
     };
 
     const handleDragOver = (e: React.DragEvent) => {
         e.preventDefault();
+        e.stopPropagation();
     };
 
     const removeFile = (index: number, type: 'product' | 'model') => {
@@ -65,8 +67,22 @@ export default function StartScreen({ onGenerate, isLoading }: any) {
                     <div
                         onDrop={(e) => handleDrop(e, 'product')}
                         onDragOver={handleDragOver}
-                        onDragEnter={() => setDragOver('product')}
-                        onDragLeave={() => setDragOver(null)}
+                        onDragEnter={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setDragOver('product');
+                        }}
+                        onDragLeave={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            // Only clear if we're actually leaving the drop zone
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const x = e.clientX;
+                            const y = e.clientY;
+                            if (x < rect.left || x >= rect.right || y < rect.top || y >= rect.bottom) {
+                                setDragOver(null);
+                            }
+                        }}
                         className={`border-4 border-dashed rounded-3xl p-8 md:p-16 text-center transition-all cursor-pointer ${dragOver === 'product'
                             ? 'border-blue-500 bg-blue-50 scale-105'
                             : 'border-gray-300 bg-gray-50 hover:border-blue-400 hover:bg-blue-50/50'
@@ -121,8 +137,22 @@ export default function StartScreen({ onGenerate, isLoading }: any) {
                     <div
                         onDrop={(e) => handleDrop(e, 'model')}
                         onDragOver={handleDragOver}
-                        onDragEnter={() => setDragOver('model')}
-                        onDragLeave={() => setDragOver(null)}
+                        onDragEnter={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setDragOver('model');
+                        }}
+                        onDragLeave={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            // Only clear if we're actually leaving the drop zone
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const x = e.clientX;
+                            const y = e.clientY;
+                            if (x < rect.left || x >= rect.right || y < rect.top || y >= rect.bottom) {
+                                setDragOver(null);
+                            }
+                        }}
                         className={`border-4 border-dashed rounded-3xl p-8 md:p-16 text-center transition-all cursor-pointer ${dragOver === 'model'
                             ? 'border-purple-500 bg-purple-50 scale-105'
                             : 'border-gray-300 bg-gray-50 hover:border-purple-400 hover:bg-purple-50/50'

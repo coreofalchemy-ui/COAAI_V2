@@ -234,10 +234,10 @@ export function populateTemplate(
     const productImages = (imageUrls.products || []).filter((url: string) => url && url.length > 100 && !url.includes('placeholder'));
     if (productImages.length > 0) {
         let productsHtml = sectionLabels.products ? `<span class="section-label" contenteditable="true" data-section-label="products">${sectionLabels.products}</span>` : '';
-        productsHtml += `<div data-section="products" style="margin-top: 48px;">`;
+        productsHtml += `<div data-section="products" class="drop-zone" style="margin-top: 48px;">`;
         productImages.forEach((url: string, index: number) => {
             productsHtml += `
-                <div style="margin-bottom: 24px;">
+                <div style="margin-bottom: 4px;">
                     <img src="${url}" style="width: 100%;" data-gallery-type="products" data-index="${index}" />
                 </div>
             `;
@@ -254,14 +254,14 @@ export function populateTemplate(
 
     // Always create models section
     let modelsHtml = sectionLabels.models ? `<span class="section-label" contenteditable="true" data-section-label="models">${sectionLabels.models}</span>` : '';
-    modelsHtml += `<div data-section="models" style="margin-top: 48px;">`;
+    modelsHtml += `<div data-section="models" class="drop-zone" style="margin-top: 48px;">`;
 
     if (modelImages.length > 0) {
         // Show actual images
         modelImages.forEach((url: any, index: number) => {
             const imageUrl = typeof url === 'string' ? url : url?.url;
             modelsHtml += `
-                <div style="margin-bottom: 24px;">
+                <div style="margin-bottom: 4px;">
                     <img src="${imageUrl}" style="width: 100%;" data-gallery-type="modelShots" data-index="${index}" />
                 </div>
             `;
@@ -276,7 +276,7 @@ export function populateTemplate(
                 justify-content: center;
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                 border-radius: 8px;
-                margin-bottom: 24px;
+                margin-bottom: 4px;
             ">
                 <div style="text-align: center; color: white;">
                     <div style="
@@ -302,7 +302,7 @@ export function populateTemplate(
     });
     if (closeupImages.length > 0 && sectionOrder.includes('closeups')) {
         let closeupHtml = sectionLabels.closeups ? `<span class="section-label" contenteditable="true" data-section-label="closeups">${sectionLabels.closeups}</span>` : '';
-        closeupHtml += `<div data-section="closeups" style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 48px;">`;
+        closeupHtml += `<div data-section="closeupShots" class="drop-zone" style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 48px;">`;
         closeupImages.forEach((url: any, index: number) => {
             const imageUrl = typeof url === 'string' ? url : url?.url;
             closeupHtml += `
@@ -327,7 +327,7 @@ export function populateTemplate(
                 // Render Drop Zone
                 sectionsHtml += `
                     <div data-section="${sectionKey}" class="drop-zone" style="
-                        margin: 20px 0;
+                        margin: 4px 0;
                         height: 300px;
                         border: 3px dashed #e5e7eb;
                         border-radius: 12px;

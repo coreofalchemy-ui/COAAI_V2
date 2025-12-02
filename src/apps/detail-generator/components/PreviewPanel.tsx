@@ -17,6 +17,8 @@ interface PreviewPanelProps {
     onUpdateTextElement: (id: string, prop: keyof TextElement, value: any) => void;
     onDeleteTextElement: (id: string) => void;
     onUpdateAllTextElements: (elements: TextElement[]) => void;
+    onContextMenu: (e: React.MouseEvent, type: string, index: number, section: string) => void;
+    lockedImages: Set<string>;
     showSubHero1?: boolean; // Optional to prevent error if passed
     showSubHero2?: boolean; // Optional to prevent error if passed
 }
@@ -35,14 +37,15 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
     onAddTextElement,
     onUpdateTextElement,
     onDeleteTextElement,
-    onUpdateAllTextElements
+    onUpdateAllTextElements,
+    onContextMenu,
+    lockedImages
 }, ref) => {
     const [htmlContent, setHtmlContent] = useState('');
     const [overlays, setOverlays] = useState<any[]>([]);
     const contentRef = useRef<HTMLDivElement>(null);
 
-    // Context Menu State
-    const [contextMenu, setContextMenu] = useState<{ x: number, y: number, textId?: string } | null>(null);
+    // Text Dragging State
     const [draggingTextId, setDraggingTextId] = useState<string | null>(null);
     const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
     const [resizingTextId, setResizingTextId] = useState<string | null>(null);
@@ -51,7 +54,7 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
     useEffect(() => {
         console.log('PreviewPanel: data', data);
         if (data.layoutHtml) {
-            console.log('PreviewPanel: layoutHtml found, length:', data.layoutHtml.length);
+            // ... (HTML generation logic remains same)
             try {
                 const html = populateTemplate(
                     data,
@@ -63,7 +66,6 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                     sectionOrder || ['hero', 'products', 'models'],
                     showAIAnalysis !== undefined ? showAIAnalysis : true
                 );
-                console.log('PreviewPanel: Generated HTML length:', html.length);
 
                 // Inject styles into HTML for minimap
                 const styleBlock = `
@@ -142,39 +144,20 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
 
     // Handle right click
     const handleContextMenu = (e: React.MouseEvent) => {
-        e.preventDefault();
-
-        // Check if clicking on a text element
+        // Check if clicking on an image (or inside one, though unlikely for img tags)
         const target = e.target as HTMLElement;
-        const textBox = target.closest('[data-text-id]');
+        const img = target.closest('img[data-gallery-type]');
 
-        if (textBox) {
-            const textId = textBox.getAttribute('data-text-id');
-            setContextMenu({ x: e.clientX, y: e.clientY, textId: textId || undefined });
-        } else {
-            setContextMenu({ x: e.clientX, y: e.clientY });
+        if (img) {
+            e.preventDefault();
+            e.stopPropagation();
+            const type = img.getAttribute('data-gallery-type') || '';
+            const index = parseInt(img.getAttribute('data-index') || '0');
+            onContextMenu(e, type, index, type);
         }
     };
 
-    // Add text
-    const handleAddText = () => {
-        if (!contextMenu) return;
-
-        const newText: TextElement = {
-            id: `text-${Date.now()}`,
-            content: '',
-            top: contextMenu.y,
-            left: contextMenu.x,
-            width: 200,
-            height: 100,
-            fontSize: 16,
-            fontFamily: 'Pretendard'
-        };
-
-        onAddTextElement(newText);
-        setContextMenu(null);
-    };
-
+    // ... (Text dragging/resizing logic remains same)
     // Text dragging
     const handleTextMouseDown = (e: React.MouseEvent, textId: string) => {
         if ((e.target as HTMLElement).tagName === 'TEXTAREA') return;
@@ -239,7 +222,7 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
         };
     }, [draggingTextId, resizingTextId, dragOffset, resizeStart, textElements, onUpdateAllTextElements]);
 
-    // Image Upload Handler
+    // Image upload handlers
     const handleImageUpload = useCallback((file: File, sectionKey: string) => {
         const reader = new FileReader();
         reader.onload = (e) => {
@@ -251,12 +234,57 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
         reader.readAsDataURL(file);
     }, [onAction]);
 
+    const handleDragEnter = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const target = e.target as HTMLElement;
+        const sectionEl = target.closest('.drop-zone');
+        if (sectionEl) {
+            sectionEl.classList.add('drag-over');
+        }
+    };
+
+    const handleDragLeave = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const target = e.target as HTMLElement;
+        const sectionEl = target.closest('.drop-zone');
+        // Only remove if we are leaving the element, not entering a child
+        if (sectionEl && !sectionEl.contains(e.relatedTarget as Node)) {
+            sectionEl.classList.remove('drag-over');
+        }
+    };
+
+    const handleDragOver = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        // Ensure visual feedback stays if moving within the zone
+        const target = e.target as HTMLElement;
+        const sectionEl = target.closest('.drop-zone');
+        if (sectionEl && !sectionEl.classList.contains('drag-over')) {
+            sectionEl.classList.add('drag-over');
+        }
+    };
+
     const handleDrop = useCallback((e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
 
+        // Clean up visual feedback
+        document.querySelectorAll('.drop-zone.drag-over').forEach(el => el.classList.remove('drag-over'));
+
         const target = e.target as HTMLElement;
-        const sectionEl = target.closest('[data-section]');
+        // Try to find section from image or section container
+        let sectionEl = target.closest('[data-section]');
+
+        // If dropped on an image, use its gallery type to determine section
+        if (!sectionEl) {
+            const img = target.closest('img[data-gallery-type]');
+            if (img) {
+                const galleryType = img.getAttribute('data-gallery-type');
+                sectionEl = document.querySelector(`[data-section="${galleryType}"]`);
+            }
+        }
 
         if (sectionEl && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
             const sectionKey = sectionEl.getAttribute('data-section');
@@ -265,11 +293,6 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
             }
         }
     }, [handleImageUpload]);
-
-    const handleDragOver = (e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-    };
 
     const handleClick = useCallback((e: React.MouseEvent) => {
         const target = e.target as HTMLElement;
@@ -289,29 +312,16 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                 input.click();
             }
         }
-        setContextMenu(null);
     }, [handleImageUpload]);
-
-    const FONT_FAMILIES = [
-        'Pretendard',
-        'Noto Sans KR',
-        'Noto Serif KR',
-        'Spoqa Han Sans Neo',
-        'IBM Plex Sans KR',
-        'Gowun Batang',
-        'Gowun Dodum',
-        'Nanum Gothic',
-        'Nanum Myeongjo',
-        'Black Han Sans'
-    ];
 
     return (
         <div
-            className="relative w-full h-full flex flex-col items-center overflow-hidden bg-white"
+            className="relative w-full flex flex-col items-center bg-white"
             onClick={handleClick}
             onDrop={handleDrop}
             onDragOver={handleDragOver}
-            onContextMenu={handleContextMenu}
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
         >
             <style>{`
                 @keyframes pulse-border {
@@ -320,16 +330,42 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                 }
                 .drop-zone {
                     min-height: 600px !important;
+                    transition: all 0.2s ease;
+                }
+                .drop-zone.drag-over {
+                    border-color: #6b7280 !important; /* Gray-500 */
+                    background-color: #f3f4f6 !important; /* Gray-100 */
+                    transform: scale(1.02);
                 }
                 img[data-gallery-type] {
                     margin: 0 !important;
                     display: block !important;
+                    user-select: none !important;
+                    -webkit-user-select: none !important;
+                    -webkit-touch-callout: none !important;
                 }
                 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&family=Noto+Serif+KR:wght@400;700&display=swap');
                 @import url('https://cdn.jsdelivr.net/gh/spoqa/spoqa-han-sans@latest/css/SpoqaHanSansNeo.css');
             `}</style>
 
-            <div ref={ref} className="preview-scroll-container w-full h-full overflow-y-auto relative scroll-smooth flex justify-center py-8">
+            <div
+                ref={ref}
+                className="preview-scroll-container w-full relative flex justify-center py-8"
+                onContextMenu={(e) => {
+                    console.log('🖱️ PreviewPanel onContextMenu', e.target);
+                    const target = e.target as HTMLElement;
+                    const img = target.closest('img[data-gallery-type]');
+
+                    if (img) {
+                        console.log('🖱️ 이미지 우클릭 감지!');
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const type = img.getAttribute('data-gallery-type') || '';
+                        const index = parseInt(img.getAttribute('data-index') || '0');
+                        onContextMenu(e, type, index, type);
+                    }
+                }}
+            >
                 <PreviewRenderer
                     htmlContent={htmlContent}
                     textElements={textElements}
@@ -341,52 +377,25 @@ export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
                     onResizeMouseDown={handleResizeMouseDown}
                     onTextChange={(id, content) => onUpdateTextElement(id, 'content', content)}
                     contentRef={contentRef}
+                    onContextMenu={onContextMenu}
                 />
 
-                {/* Context Menu */}
-                {contextMenu && (
-                    <div
-                        className="fixed bg-white shadow-xl rounded-lg border border-gray-200 py-2 z-[10000]"
-                        style={{ top: contextMenu.y, left: contextMenu.x }}
-                    >
-                        {contextMenu.textId ? (
-                            <>
-                                <div className="px-3 py-1 text-xs font-bold text-gray-500 border-b mb-1">서체 선택</div>
-                                {FONT_FAMILIES.map(font => (
-                                    <button
-                                        key={font}
-                                        onClick={() => {
-                                            onUpdateTextElement(contextMenu.textId!, 'fontFamily', font);
-                                            setContextMenu(null);
-                                        }}
-                                        className="w-full text-left px-4 py-2 hover:bg-gray-100 text-sm"
-                                        style={{ fontFamily: font }}
-                                    >
-                                        {font}
-                                    </button>
-                                ))}
-                                <div className="border-t mt-1 pt-1">
-                                    <button
-                                        onClick={() => {
-                                            onDeleteTextElement(contextMenu.textId!);
-                                            setContextMenu(null);
-                                        }}
-                                        className="w-full text-left px-4 py-2 hover:bg-red-50 text-sm text-red-600"
-                                    >
-                                        삭제
-                                    </button>
-                                </div>
-                            </>
-                        ) : (
-                            <button
-                                onClick={handleAddText}
-                                className="w-full text-left px-4 py-2 hover:bg-gray-100 text-sm"
+                {/* Lock Indicators */}
+                {overlays.map((o, i) => {
+                    const key = `${o.type}-${o.index}`;
+                    if (lockedImages.has(key)) {
+                        return (
+                            <div
+                                key={`lock-${i}`}
+                                className="absolute z-30 pointer-events-none flex items-center justify-center bg-black/30 rounded-full p-2 backdrop-blur-sm"
+                                style={{ top: o.top + 10, right: 10 + (1000 - (o.left + o.width)) }} // Approximate positioning
                             >
-                                텍스트 추가
-                            </button>
-                        )}
-                    </div>
-                )}
+                                <span className="text-xl">🔒</span>
+                            </div>
+                        );
+                    }
+                    return null;
+                })}
             </div>
         </div>
     );

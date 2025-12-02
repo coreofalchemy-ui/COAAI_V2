@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { RefreshCwIcon, Trash2Icon, CopyIcon, PlusIcon, MinusIcon } from './icons';
 
 export interface TextElement {
@@ -24,6 +24,7 @@ interface PreviewRendererProps {
     onResizeMouseDown?: (e: React.MouseEvent, textId: string) => void;
     onTextChange?: (textId: string, content: string) => void;
     contentRef?: React.RefObject<HTMLDivElement | null>;
+    onContextMenu?: (e: React.MouseEvent, type: string, index: number, section: string) => void;
 }
 
 export const PreviewRenderer: React.FC<PreviewRendererProps> = ({
@@ -36,7 +37,8 @@ export const PreviewRenderer: React.FC<PreviewRendererProps> = ({
     onTextMouseDown,
     onResizeMouseDown,
     onTextChange,
-    contentRef
+    contentRef,
+    onContextMenu
 }) => {
     return (
         <div className="relative w-full h-full">
@@ -56,7 +58,7 @@ export const PreviewRenderer: React.FC<PreviewRendererProps> = ({
                 @import url('https://cdn.jsdelivr.net/gh/spoqa/spoqa-han-sans@latest/css/SpoqaHanSansNeo.css');
             `}</style>
 
-            <div ref={contentRef} className="relative w-[1000px] bg-white shadow-2xl" dangerouslySetInnerHTML={{ __html: htmlContent }} />
+            <div ref={contentRef} className="relative w-[1000px] bg-white shadow-2xl min-h-[1000px]" dangerouslySetInnerHTML={{ __html: htmlContent }} />
 
             {/* Text Elements */}
             {textElements.map(text => (

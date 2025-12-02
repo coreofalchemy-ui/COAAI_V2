@@ -5,6 +5,7 @@ import { PreviewPanel } from './components/PreviewPanel';
 import { NavigationMinimap } from './components/NavigationMinimap';
 import { generateTextContentOnly, generateInitialOriginalSet, generateStudioImageSet, LAYOUT_TEMPLATE_HTML } from './services/geminiService';
 import { TextElement } from './components/PreviewRenderer';
+import { SimpleContextMenu } from './components/SimpleContextMenu';
 
 // Constants
 const PLACEHOLDER_ASSET = { url: 'https://via.placeholder.com/400x600?text=Waiting+for+Image', id: 'placeholder' };
@@ -199,8 +200,16 @@ export default function DetailGeneratorApp() {
         }
     }, [previewDevice]);
 
+    const [contextMenu, setContextMenu] = useState<{ visible: boolean, x: number, y: number, targetId: string | null }>({ visible: false, x: 0, y: 0, targetId: null });
+    const [isProcessing, setIsProcessing] = useState(false);
+
+
+
     return (
-        <div className="flex flex-col h-screen bg-gray-50 overflow-hidden font-sans pt-[60px]">
+        <div
+            className="flex flex-col h-screen bg-gray-50 overflow-hidden font-sans pt-[60px]"
+            onClick={() => setContextMenu({ visible: false, x: 0, y: 0, targetId: null })}
+        >
             <div className="h-16 bg-white border-b flex items-center justify-between px-8 shadow-sm relative z-50">
                 <div className="flex items-center gap-4">
                     <button onClick={() => setScreen('start')} className="text-2xl font-black text-gray-900">📄 AI 상세페이지 생성기</button>
@@ -273,14 +282,18 @@ export default function DetailGeneratorApp() {
                             </div>
 
                             {/* Preview Area */}
-                            <div className={`flex-grow flex justify-center overflow-hidden ${previewDevice === 'desktop' ? 'bg-white' : 'bg-gray-50 p-8'}`}>
+                            <div
+                                className={`flex-grow flex justify-center overflow-y-auto bg-gray-100 p-8 custom-scrollbar`}
+                                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                onDrop={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                            >
                                 <div
-                                    className={`bg-white transition-all duration-300 ease-in-out origin-top ${previewDevice === 'desktop' ? '' : 'shadow-2xl'}`}
+                                    className={`bg-white transition-all duration-300 ease-in-out origin-top ${previewDevice === 'desktop' ? 'shadow-lg my-8' : 'shadow-2xl'}`}
                                     style={{
-                                        width: previewWidth === '100%' ? '100%' : '1000px', // Keep 1000px width for scaling
+                                        width: '1000px', // Always fixed base width
                                         minHeight: '100%',
-                                        maxWidth: previewDevice === 'desktop' ? '100%' : undefined,
-                                        zoom: previewWidth === '100%' ? autoScale : parseInt(previewWidth) / 1000 // Scale down
+                                        transform: `scale(${previewWidth === '100%' ? autoScale : parseInt(previewWidth) / 1000})`,
+                                        transformOrigin: 'top center',
                                     }}
                                 >
                                     <PreviewPanel
@@ -299,6 +312,15 @@ export default function DetailGeneratorApp() {
                                         onUpdateTextElement={handleUpdateTextElement}
                                         onDeleteTextElement={handleDeleteTextElement}
                                         onUpdateAllTextElements={handleUpdateAllTextElements}
+                                        onContextMenu={(e, type, index, section) => {
+                                            setContextMenu({
+                                                visible: true,
+                                                x: e.clientX,
+                                                y: e.clientY,
+                                                targetId: `${section}-${index}`
+                                            });
+                                        }}
+                                        lockedImages={new Set()}
                                     />
                                 </div>
                             </div>
@@ -333,6 +355,42 @@ export default function DetailGeneratorApp() {
                     </div>
                 )}
             </main>
+
+            {/* Simple Context Menu */}
+            <SimpleContextMenu
+                x={contextMenu.x}
+                y={contextMenu.y}
+                visible={contextMenu.visible}
+                onDelete={() => {
+                    if (!contextMenu.targetId) return;
+                    const [section, indexStr] = contextMenu.targetId.split('-');
+                    const index = parseInt(indexStr);
+
+                    setGeneratedData((prev: any) => {
+                        const newData = { ...prev };
+                        if (section === 'products' && newData.imageUrls.products) {
+                            newData.imageUrls.products = newData.imageUrls.products.filter((_: any, i: number) => i !== index);
+                        } else if (section === 'modelShots' && newData.imageUrls.modelShots) {
+                            newData.imageUrls.modelShots = newData.imageUrls.modelShots.filter((_: any, i: number) => i !== index);
+                        } else if (section === 'closeupShots' && newData.imageUrls.closeupShots) {
+                            newData.imageUrls.closeupShots = newData.imageUrls.closeupShots.filter((_: any, i: number) => i !== index);
+                        }
+                        return newData;
+                    });
+                    setContextMenu({ visible: false, x: 0, y: 0, targetId: null });
+                }}
+            />
+
+            {/* Loading Overlay */}
+            {isProcessing && (
+                <div className="fixed inset-0 z-[10000] bg-black/50 flex items-center justify-center backdrop-blur-sm">
+                    <div className="bg-white p-6 rounded-xl shadow-2xl flex flex-col items-center">
+                        <div className="animate-spin rounded-full h-10 w-10 border-4 border-blue-600 border-t-transparent mb-4"></div>
+                        <p className="text-lg font-bold text-gray-800">AI 신발 합성 중...</p>
+                        <p className="text-sm text-gray-500 mt-2">잠시만 기다려주세요.</p>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
