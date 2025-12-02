@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import StartScreen from './components/StartScreen';
 import AdjustmentPanel from './components/AdjustmentPanel';
 import { PreviewPanel } from './components/PreviewPanel';
 import { NavigationMinimap } from './components/NavigationMinimap';
 import { generateTextContentOnly, generateInitialOriginalSet, generateStudioImageSet, LAYOUT_TEMPLATE_HTML } from './services/geminiService';
+import { TextElement } from './components/PreviewRenderer';
 
 // Constants
 const PLACEHOLDER_ASSET = { url: 'https://via.placeholder.com/400x600?text=Waiting+for+Image', id: 'placeholder' };
@@ -25,14 +26,36 @@ export default function DetailGeneratorApp() {
     const [generatedData, setGeneratedData] = useState<any>(null);
     const [imageZoomLevels, setImageZoomLevels] = useState<any>({});
     const [activeSection, setActiveSection] = useState<string>('hero');
-    const [sectionOrder, setSectionOrder] = useState(['hero', 'products', 'models', 'closeups']);
+    const [sectionOrder, setSectionOrder] = useState(['hero']);
     const [showAIAnalysis, setShowAIAnalysis] = useState(true);
-    const [showSubHero1, setShowSubHero1] = useState(false);
-    const [showSubHero2, setShowSubHero2] = useState(false);
+    // SubHero states removed
+
+    // Text Elements State (Lifted from PreviewPanel)
+    const [textElements, setTextElements] = useState<TextElement[]>([]);
+
+    const handleAddTextElement = (newText: TextElement) => {
+        setTextElements(prev => [...prev, newText]);
+    };
+
+    const handleUpdateTextElement = (textId: string, property: keyof TextElement, value: any) => {
+        setTextElements(prev => prev.map(text =>
+            text.id === textId ? { ...text, [property]: value } : text
+        ));
+    };
+
+    const handleDeleteTextElement = (textId: string) => {
+        setTextElements(prev => prev.filter(t => t.id !== textId));
+    };
+
+    const handleUpdateAllTextElements = (newElements: TextElement[]) => {
+        setTextElements(newElements);
+    };
 
     // Responsive Preview State
     const [previewDevice, setPreviewDevice] = useState<'mobile' | 'tablet' | 'desktop' | 'responsive'>('desktop');
     const [previewWidth, setPreviewWidth] = useState<string>('100%');
+    const previewRef = useRef<HTMLDivElement>(null);
+    const [previewHtml, setPreviewHtml] = useState<string>('');
 
     useEffect(() => {
         console.log('Section Order Updated:', sectionOrder);
@@ -46,33 +69,47 @@ export default function DetailGeneratorApp() {
         else setPreviewWidth('100%');
     };
 
+    const handleAddSection = () => {
+        const newSectionId = `custom-${Date.now()}`;
+        setSectionOrder(prev => [...prev, newSectionId]);
+        setGeneratedData((prev: any) => ({
+            ...prev,
+            imageUrls: {
+                ...prev.imageUrls,
+                [newSectionId]: PLACEHOLDER_ASSET.url
+            }
+        }));
+    };
+
     const handleGenerate = async (pFiles: File[], mFiles: File[], mode: string) => {
         setLoading(true);
         try {
-            const productUrls = await Promise.all(pFiles.map(fileToDataUrl));
+            let productUrls: string[] = [];
             let modelShots = [PLACEHOLDER_ASSET], closeupShots = [PLACEHOLDER_ASSET];
             let textData = { textContent: {}, specContent: {}, heroTextContent: {}, noticeContent: {} };
 
             if (mode === 'frame') {
-                if (pFiles.length === 0) {
-                    // Skip AI if no images, use default placeholders
-                    textData = {
-                        textContent: {},
-                        specContent: {},
-                        heroTextContent: {
-                            productName: 'Sample Product',
-                            brandLine: 'BRAND NAME',
-                            subName: 'Color / Model',
-                            stylingMatch: '스타일링 매치 설명이 들어갑니다.',
-                            craftsmanship: '제작 공정 및 소재 설명이 들어갑니다.',
-                            technology: '핵심 기술 설명이 들어갑니다.'
-                        },
-                        noticeContent: {}
-                    };
-                } else {
-                    textData = await generateTextContentOnly(pFiles);
+                // Frame mode: Show uploaded images in preview but skip AI text generation
+                if (pFiles.length > 0) {
+                    productUrls = await Promise.all(pFiles.map(fileToDataUrl));
                 }
+                // Use default text placeholders (no AI generation)
+                textData = {
+                    textContent: {},
+                    specContent: {},
+                    heroTextContent: {
+                        productName: 'Sample Product',
+                        brandLine: 'BRAND NAME',
+                        subName: 'Color / Model',
+                        stylingMatch: '스타일링 매치 설명이 들어갑니다.',
+                        craftsmanship: '제작 공정 및 소재 설명이 들어갑니다.',
+                        technology: '핵심 기술 설명이 들어갑니다.'
+                    },
+                    noticeContent: {}
+                };
             } else {
+                // Original/Studio mode: Process images and generate text
+                productUrls = await Promise.all(pFiles.map(fileToDataUrl));
                 const textPromise = generateTextContentOnly(pFiles);
                 const imgPromise = mode === 'studio' ? generateStudioImageSet(pFiles, mFiles) : generateInitialOriginalSet(pFiles, mFiles);
                 const [txt, img] = await Promise.all([textPromise, imgPromise]);
@@ -80,6 +117,11 @@ export default function DetailGeneratorApp() {
                 modelShots = img.modelShots;
                 closeupShots = img.closeupShots;
             }
+
+            // Initial section order based on available images
+            const initialSections = ['hero'];
+            if (pFiles.length > 0) initialSections.push('products');
+            if (mFiles.length > 0) initialSections.push('models');
 
             setGeneratedData({
                 ...textData,
@@ -94,9 +136,10 @@ export default function DetailGeneratorApp() {
                 layoutHtml: LAYOUT_TEMPLATE_HTML,
                 productFiles: pFiles,
                 modelFiles: mFiles,
-                sectionOrder // Store initial order
+                sectionOrder: initialSections
             });
             setScreen('result');
+            setSectionOrder(initialSections);
         } catch (e) {
             alert("생성 오류: " + e);
         } finally {
@@ -105,11 +148,56 @@ export default function DetailGeneratorApp() {
     };
 
     const handleAction = (action: string, type: any, index: any, arg?: any) => {
-        // Implement action handling if needed
+        if (action === 'updateImage') {
+            const sectionKey = type; // For custom sections, type is the sectionKey
+            const newUrl = arg;
+            setGeneratedData((prev: any) => ({
+                ...prev,
+                imageUrls: {
+                    ...prev.imageUrls,
+                    [sectionKey]: newUrl
+                }
+            }));
+        }
         console.log('Action:', action, type, index, arg);
     };
 
+    // Responsive Auto-Scale Logic
+    const middlePanelRef = React.useRef<HTMLDivElement>(null);
+    const [autoScale, setAutoScale] = useState(1);
 
+    useEffect(() => {
+        if (previewDevice === 'desktop' || previewDevice === 'responsive') {
+            const updateScale = () => {
+                if (middlePanelRef.current) {
+                    const containerWidth = middlePanelRef.current.clientWidth;
+                    const contentWidth = 1000; // Fixed content width
+                    const padding = 40;
+                    const availableWidth = containerWidth - padding;
+
+                    if (availableWidth < contentWidth) {
+                        setAutoScale(availableWidth / contentWidth);
+                    } else {
+                        setAutoScale(1);
+                    }
+                }
+            };
+
+            window.addEventListener('resize', updateScale);
+            updateScale(); // Initial call
+
+            // Observer for container resize
+            const observer = new ResizeObserver(updateScale);
+            if (middlePanelRef.current) observer.observe(middlePanelRef.current);
+
+            return () => {
+                window.removeEventListener('resize', updateScale);
+                observer.disconnect();
+            };
+        } else {
+            setAutoScale(1);
+        }
+    }, [previewDevice]);
 
     return (
         <div className="flex flex-col h-screen bg-gray-50 overflow-hidden font-sans pt-[60px]">
@@ -142,16 +230,12 @@ export default function DetailGeneratorApp() {
                                     onUpdate={(newData: any) => setGeneratedData(newData)}
                                     showAIAnalysis={showAIAnalysis}
                                     onToggleAIAnalysis={() => setShowAIAnalysis(prev => !prev)}
-                                    showSubHero1={showSubHero1}
-                                    onToggleSubHero1={() => setShowSubHero1(prev => !prev)}
-                                    showSubHero2={showSubHero2}
-                                    onToggleSubHero2={() => setShowSubHero2(prev => !prev)}
                                 />
                             </div>
                         </div>
 
                         {/* Middle Panel */}
-                        <div className="flex-grow h-full bg-gray-100 overflow-hidden relative flex flex-col">
+                        <div ref={middlePanelRef} className="flex-grow h-full bg-gray-100 overflow-hidden relative flex flex-col">
                             {/* Responsive Toolbar */}
                             <div className="h-12 bg-white border-b flex items-center justify-center gap-4 px-4 shadow-sm z-20">
                                 <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Preview Mode:</span>
@@ -196,10 +280,11 @@ export default function DetailGeneratorApp() {
                                         width: previewWidth === '100%' ? '100%' : '1000px', // Keep 1000px width for scaling
                                         minHeight: '100%',
                                         maxWidth: previewDevice === 'desktop' ? '100%' : undefined,
-                                        zoom: previewWidth === '100%' ? 1 : parseInt(previewWidth) / 1000 // Scale down
+                                        zoom: previewWidth === '100%' ? autoScale : parseInt(previewWidth) / 1000 // Scale down
                                     }}
                                 >
                                     <PreviewPanel
+                                        ref={previewRef}
                                         data={generatedData}
                                         imageZoomLevels={imageZoomLevels}
                                         onAction={handleAction}
@@ -208,8 +293,12 @@ export default function DetailGeneratorApp() {
                                         onSectionVisible={setActiveSection}
                                         sectionOrder={sectionOrder}
                                         showAIAnalysis={showAIAnalysis}
-                                        showSubHero1={showSubHero1}
-                                        showSubHero2={showSubHero2}
+                                        onHtmlUpdate={setPreviewHtml}
+                                        textElements={textElements}
+                                        onAddTextElement={handleAddTextElement}
+                                        onUpdateTextElement={handleUpdateTextElement}
+                                        onDeleteTextElement={handleDeleteTextElement}
+                                        onUpdateAllTextElements={handleUpdateAllTextElements}
                                     />
                                 </div>
                             </div>
@@ -234,6 +323,11 @@ export default function DetailGeneratorApp() {
                                         sectionOrder: newOrder
                                     }));
                                 }}
+                                onAddSection={handleAddSection}
+                                previewRef={previewRef}
+                                previewHtml={previewHtml}
+                                textElements={textElements}
+                                onAction={handleAction}
                             />
                         </div>
                     </div>

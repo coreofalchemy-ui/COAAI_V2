@@ -1,12 +1,52 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, forwardRef } from 'react';
 import { populateTemplate } from '../services/geminiService';
-import { RefreshCwIcon, Trash2Icon, CopyIcon, PlusIcon, MinusIcon } from './icons';
+import { PreviewRenderer, TextElement } from './PreviewRenderer';
 
-export const PreviewPanel: React.FC<any> = ({ data, imageZoomLevels, onAction, onZoom, activeSection, onSectionVisible, sectionOrder, showAIAnalysis, showSubHero1, showSubHero2 }) => {
+interface PreviewPanelProps {
+    data: any;
+    imageZoomLevels: any;
+    onAction: any;
+    onZoom: any;
+    activeSection: string;
+    onSectionVisible: any;
+    sectionOrder: string[];
+    showAIAnalysis: boolean;
+    onHtmlUpdate: (html: string) => void;
+    textElements: TextElement[];
+    onAddTextElement: (text: TextElement) => void;
+    onUpdateTextElement: (id: string, prop: keyof TextElement, value: any) => void;
+    onDeleteTextElement: (id: string) => void;
+    onUpdateAllTextElements: (elements: TextElement[]) => void;
+    showSubHero1?: boolean; // Optional to prevent error if passed
+    showSubHero2?: boolean; // Optional to prevent error if passed
+}
+
+export const PreviewPanel = forwardRef<HTMLDivElement, PreviewPanelProps>(({
+    data,
+    imageZoomLevels,
+    onAction,
+    onZoom,
+    activeSection,
+    onSectionVisible,
+    sectionOrder,
+    showAIAnalysis,
+    onHtmlUpdate,
+    textElements,
+    onAddTextElement,
+    onUpdateTextElement,
+    onDeleteTextElement,
+    onUpdateAllTextElements
+}, ref) => {
     const [htmlContent, setHtmlContent] = useState('');
     const [overlays, setOverlays] = useState<any[]>([]);
     const contentRef = useRef<HTMLDivElement>(null);
-    const wrapperRef = useRef<HTMLDivElement>(null);
+
+    // Context Menu State
+    const [contextMenu, setContextMenu] = useState<{ x: number, y: number, textId?: string } | null>(null);
+    const [draggingTextId, setDraggingTextId] = useState<string | null>(null);
+    const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+    const [resizingTextId, setResizingTextId] = useState<string | null>(null);
+    const [resizeStart, setResizeStart] = useState({ x: 0, y: 0, width: 0, height: 0 });
 
     useEffect(() => {
         console.log('PreviewPanel: data', data);
@@ -21,34 +61,56 @@ export const PreviewPanel: React.FC<any> = ({ data, imageZoomLevels, onAction, o
                     data.layoutHtml,
                     imageZoomLevels || {},
                     sectionOrder || ['hero', 'products', 'models'],
-                    showAIAnalysis !== undefined ? showAIAnalysis : true,
-                    showSubHero1 || false,
-                    showSubHero2 || false
+                    showAIAnalysis !== undefined ? showAIAnalysis : true
                 );
                 console.log('PreviewPanel: Generated HTML length:', html.length);
-                setHtmlContent(html);
+
+                // Inject styles into HTML for minimap
+                const styleBlock = `
+                    <style>
+                        @import url('https://cdn.jsdelivr.net/gh/spoqa/spoqa-han-sans@latest/css/SpoqaHanSansNeo.css');
+                        img { max-width: 100%; }
+                        body { margin: 0; padding: 0; overflow-x: hidden; }
+                    </style>
+                `;
+                const finalHtml = styleBlock + html;
+
+                setHtmlContent(finalHtml);
+                if (onHtmlUpdate) {
+                    onHtmlUpdate(finalHtml);
+                }
             } catch (e) {
                 console.error('PreviewPanel: Error generating HTML', e);
             }
-        } else {
-            console.error('PreviewPanel: No layoutHtml in data');
         }
-    }, [data, imageZoomLevels, sectionOrder, showAIAnalysis, showSubHero1, showSubHero2]);
+    }, [data, imageZoomLevels, sectionOrder, showAIAnalysis]);
 
     const calculateOverlays = useCallback(() => {
-        if (!contentRef.current || !wrapperRef.current) return;
-        const images = contentRef.current.querySelectorAll<HTMLImageElement>('img[data-type]');
+        if (!contentRef.current) return;
+
+        const images = contentRef.current.querySelectorAll<HTMLImageElement>('img[data-gallery-type]');
         const newOverlays: any[] = [];
-        const containerRect = wrapperRef.current.getBoundingClientRect();
 
         images.forEach((img) => {
-            const rect = img.getBoundingClientRect();
-            if (rect.width === 0) return;
+            // Use offsetTop/Left for stable positioning relative to the container
+            let top = img.offsetTop;
+            let left = img.offsetLeft;
+            let parent = img.offsetParent as HTMLElement;
+
+            // Traverse up until we hit the contentRef or null
+            while (parent && parent !== contentRef.current) {
+                top += parent.offsetTop;
+                left += parent.offsetLeft;
+                parent = parent.offsetParent as HTMLElement;
+            }
+
+            if (img.offsetWidth === 0) return;
+
             newOverlays.push({
-                top: rect.top - containerRect.top + wrapperRef.current!.scrollTop,
-                left: rect.left - containerRect.left + wrapperRef.current!.scrollLeft,
-                width: rect.width,
-                height: rect.height,
+                top,
+                left,
+                width: img.offsetWidth,
+                height: img.offsetHeight,
                 type: img.dataset.galleryType,
                 index: parseInt(img.dataset.index || '0')
             });
@@ -63,100 +125,110 @@ export const PreviewPanel: React.FC<any> = ({ data, imageZoomLevels, onAction, o
         window.addEventListener('resize', calculateOverlays);
         const imgHandler = () => calculateOverlays();
         contentRef.current?.addEventListener('load', imgHandler, true);
-        return () => { obs.disconnect(); window.removeEventListener('resize', calculateOverlays); };
-    }, [htmlContent, calculateOverlays]);
 
-    // ... (previous code)
+        // Scroll event listener
+        if (ref && typeof ref !== 'function' && ref.current) {
+            ref.current.addEventListener('scroll', calculateOverlays);
+        }
 
-    // Text Interaction State
-    const [draggingId, setDraggingId] = useState<string | null>(null);
-    const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-    const [contextMenu, setContextMenu] = useState<{ x: number, y: number, targetId: string } | null>(null);
-    const [snapLines, setSnapLines] = useState<{ x?: number, type: 'left' | 'center' | 'right' } | null>(null);
+        return () => {
+            obs.disconnect();
+            window.removeEventListener('resize', calculateOverlays);
+            if (ref && typeof ref !== 'function' && ref.current) {
+                ref.current.removeEventListener('scroll', calculateOverlays);
+            }
+        };
+    }, [htmlContent, calculateOverlays, ref]);
 
-    // Remove Blue Border Logic (Deleted useEffect)
+    // Handle right click
+    const handleContextMenu = (e: React.MouseEvent) => {
+        e.preventDefault();
 
-    // Text Element Identification & Event Binding
-    useEffect(() => {
-        if (!contentRef.current) return;
+        // Check if clicking on a text element
+        const target = e.target as HTMLElement;
+        const textBox = target.closest('[data-text-id]');
 
-        const textElements = contentRef.current.querySelectorAll('h1, h2, h3, p, span, div[data-editable="true"]');
-        textElements.forEach((el, index) => {
-            const htmlEl = el as HTMLElement;
-            if (!htmlEl.id) htmlEl.id = `text-el-${index}`;
-            htmlEl.style.cursor = 'text';
-            htmlEl.style.position = 'relative'; // Ensure relative positioning for movement
+        if (textBox) {
+            const textId = textBox.getAttribute('data-text-id');
+            setContextMenu({ x: e.clientX, y: e.clientY, textId: textId || undefined });
+        } else {
+            setContextMenu({ x: e.clientX, y: e.clientY });
+        }
+    };
 
-            // Mouse Down for Dragging (only if not editing)
-            htmlEl.onmousedown = (e) => {
-                if (e.button !== 0) return; // Only left click
-                e.stopPropagation();
-                const rect = htmlEl.getBoundingClientRect();
-                setDraggingId(htmlEl.id);
-                setDragOffset({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-            };
+    // Add text
+    const handleAddText = () => {
+        if (!contextMenu) return;
 
-            // Context Menu
-            htmlEl.oncontextmenu = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setContextMenu({ x: e.clientX, y: e.clientY, targetId: htmlEl.id });
-            };
-        });
-    }, [htmlContent]);
+        const newText: TextElement = {
+            id: `text-${Date.now()}`,
+            content: '',
+            top: contextMenu.y,
+            left: contextMenu.x,
+            width: 200,
+            height: 100,
+            fontSize: 16,
+            fontFamily: 'Pretendard'
+        };
 
-    // Global Drag & Snap Logic
+        onAddTextElement(newText);
+        setContextMenu(null);
+    };
+
+    // Text dragging
+    const handleTextMouseDown = (e: React.MouseEvent, textId: string) => {
+        if ((e.target as HTMLElement).tagName === 'TEXTAREA') return;
+        e.stopPropagation();
+        setDraggingTextId(textId);
+        const text = textElements.find(t => t.id === textId);
+        if (text) {
+            setDragOffset({ x: e.clientX - text.left, y: e.clientY - text.top });
+        }
+    };
+
+    // Text resizing
+    const handleResizeMouseDown = (e: React.MouseEvent, textId: string) => {
+        e.stopPropagation();
+        e.preventDefault();
+        setResizingTextId(textId);
+        const text = textElements.find(t => t.id === textId);
+        if (text) {
+            setResizeStart({ x: e.clientX, y: e.clientY, width: text.width, height: text.height });
+        }
+    };
+
     useEffect(() => {
         const handleMouseMove = (e: MouseEvent) => {
-            if (!draggingId || !contentRef.current) return;
+            if (draggingTextId) {
+                const newElements = textElements.map(text =>
+                    text.id === draggingTextId
+                        ? { ...text, left: e.clientX - dragOffset.x, top: e.clientY - dragOffset.y }
+                        : text
+                );
+                onUpdateAllTextElements(newElements);
+            } else if (resizingTextId) {
+                const deltaX = e.clientX - resizeStart.x;
+                const deltaY = e.clientY - resizeStart.y;
 
-            const el = document.getElementById(draggingId);
-            if (!el) return;
-
-            const containerRect = contentRef.current.getBoundingClientRect();
-            let newX = e.clientX - containerRect.left - dragOffset.x;
-
-            // Grid Snapping Logic
-            const elWidth = el.offsetWidth;
-            const containerWidth = containerRect.width;
-            const center = containerWidth / 2 - elWidth / 2;
-            const right = containerWidth - elWidth - 20; // 20px padding
-            const left = 20;
-
-            let snapped = false;
-            let snapLineInfo = null;
-
-            // Snap Threshold
-            const threshold = 10;
-
-            if (Math.abs(newX - center) < threshold) {
-                newX = center;
-                snapLineInfo = { x: containerWidth / 2, type: 'center' as const };
-                snapped = true;
-            } else if (Math.abs(newX - left) < threshold) {
-                newX = left;
-                snapLineInfo = { x: 20, type: 'left' as const };
-                snapped = true;
-            } else if (Math.abs(newX - right) < threshold) {
-                newX = right;
-                snapLineInfo = { x: containerWidth - 20, type: 'right' as const };
-                snapped = true;
+                const newElements = textElements.map(text =>
+                    text.id === resizingTextId
+                        ? {
+                            ...text,
+                            width: Math.max(100, resizeStart.width + deltaX),
+                            height: Math.max(50, resizeStart.height + deltaY)
+                        }
+                        : text
+                );
+                onUpdateAllTextElements(newElements);
             }
-
-            setSnapLines(snapLineInfo);
-            el.style.left = `${newX}px`;
-            // el.style.top is handled by flow usually, but if we want full drag we need absolute. 
-            // For now, let's assume horizontal alignment adjustment within the flow or absolute if needed.
-            // If the element is static, setting left might not work without position: relative/absolute.
-            // We set position relative in the init.
         };
 
         const handleMouseUp = () => {
-            setDraggingId(null);
-            setSnapLines(null);
+            setDraggingTextId(null);
+            setResizingTextId(null);
         };
 
-        if (draggingId) {
+        if (draggingTextId || resizingTextId) {
             window.addEventListener('mousemove', handleMouseMove);
             window.addEventListener('mouseup', handleMouseUp);
         }
@@ -165,88 +237,159 @@ export const PreviewPanel: React.FC<any> = ({ data, imageZoomLevels, onAction, o
             window.removeEventListener('mousemove', handleMouseMove);
             window.removeEventListener('mouseup', handleMouseUp);
         };
-    }, [draggingId, dragOffset]);
+    }, [draggingTextId, resizingTextId, dragOffset, resizeStart, textElements, onUpdateAllTextElements]);
 
-    // Context Menu Actions
-    const updateTextStyle = (key: string, value: string) => {
-        if (!contextMenu) return;
-        const el = document.getElementById(contextMenu.targetId);
-        if (el) {
-            el.style[key as any] = value;
+    // Image Upload Handler
+    const handleImageUpload = useCallback((file: File, sectionKey: string) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const result = e.target?.result as string;
+            if (result) {
+                onAction('updateImage', sectionKey, 0, result);
+            }
+        };
+        reader.readAsDataURL(file);
+    }, [onAction]);
+
+    const handleDrop = useCallback((e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const target = e.target as HTMLElement;
+        const sectionEl = target.closest('[data-section]');
+
+        if (sectionEl && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            const sectionKey = sectionEl.getAttribute('data-section');
+            if (sectionKey) {
+                handleImageUpload(e.dataTransfer.files[0], sectionKey);
+            }
         }
-        setContextMenu(null);
+    }, [handleImageUpload]);
+
+    const handleDragOver = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
     };
 
+    const handleClick = useCallback((e: React.MouseEvent) => {
+        const target = e.target as HTMLElement;
+        const sectionEl = target.closest('.drop-zone');
+
+        if (sectionEl) {
+            const sectionKey = sectionEl.getAttribute('data-section');
+            if (sectionKey) {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = 'image/*';
+                input.onchange = (ev: any) => {
+                    if (ev.target.files && ev.target.files.length > 0) {
+                        handleImageUpload(ev.target.files[0], sectionKey);
+                    }
+                };
+                input.click();
+            }
+        }
+        setContextMenu(null);
+    }, [handleImageUpload]);
+
+    const FONT_FAMILIES = [
+        'Pretendard',
+        'Noto Sans KR',
+        'Noto Serif KR',
+        'Spoqa Han Sans Neo',
+        'IBM Plex Sans KR',
+        'Gowun Batang',
+        'Gowun Dodum',
+        'Nanum Gothic',
+        'Nanum Myeongjo',
+        'Black Han Sans'
+    ];
+
     return (
-        <div className="relative w-full h-full flex flex-col items-center overflow-hidden bg-white" onClick={() => setContextMenu(null)}>
+        <div
+            className="relative w-full h-full flex flex-col items-center overflow-hidden bg-white"
+            onClick={handleClick}
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onContextMenu={handleContextMenu}
+        >
             <style>{`
                 @keyframes pulse-border {
                     0%, 100% { opacity: 1; }
                     50% { opacity: 0.6; }
                 }
+                .drop-zone {
+                    min-height: 600px !important;
+                }
+                img[data-gallery-type] {
+                    margin: 0 !important;
+                    display: block !important;
+                }
+                @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&family=Noto+Serif+KR:wght@400;700&display=swap');
+                @import url('https://cdn.jsdelivr.net/gh/spoqa/spoqa-han-sans@latest/css/SpoqaHanSansNeo.css');
             `}</style>
 
-            <div ref={wrapperRef} className="preview-scroll-container w-full h-full overflow-y-auto relative scroll-smooth flex justify-center py-8">
-                <div ref={contentRef} className="relative w-[1000px] bg-white shadow-2xl" dangerouslySetInnerHTML={{ __html: htmlContent }} />
-
-                {/* Snap Lines */}
-                {snapLines && (
-                    <div
-                        className="absolute top-0 bottom-0 border-l border-dashed border-red-500 z-50 pointer-events-none"
-                        style={{ left: contentRef.current ? contentRef.current.getBoundingClientRect().left + (snapLines.x || 0) : 0 }}
-                    />
-                )}
+            <div ref={ref} className="preview-scroll-container w-full h-full overflow-y-auto relative scroll-smooth flex justify-center py-8">
+                <PreviewRenderer
+                    htmlContent={htmlContent}
+                    textElements={textElements}
+                    overlays={overlays}
+                    onAction={onAction}
+                    onZoom={onZoom}
+                    interactive={true}
+                    onTextMouseDown={handleTextMouseDown}
+                    onResizeMouseDown={handleResizeMouseDown}
+                    onTextChange={(id, content) => onUpdateTextElement(id, 'content', content)}
+                    contentRef={contentRef}
+                />
 
                 {/* Context Menu */}
                 {contextMenu && (
                     <div
-                        className="fixed bg-white shadow-xl rounded-lg border border-gray-200 py-2 z-50 w-48"
+                        className="fixed bg-white shadow-xl rounded-lg border border-gray-200 py-2 z-[10000]"
                         style={{ top: contextMenu.y, left: contextMenu.x }}
                     >
-                        <div className="px-3 py-1 text-xs font-bold text-gray-500 border-b border-gray-100 mb-1">텍스트 스타일 수정</div>
-                        <div className="px-2">
-                            <div className="text-xs text-gray-600 mb-1">크기</div>
-                            <div className="flex gap-1 mb-2">
-                                {['12px', '16px', '24px', '32px', '48px', '64px'].map(size => (
-                                    <button key={size} onClick={() => updateTextStyle('fontSize', size)} className="flex-1 py-1 text-[10px] border rounded hover:bg-gray-50">{size}</button>
+                        {contextMenu.textId ? (
+                            <>
+                                <div className="px-3 py-1 text-xs font-bold text-gray-500 border-b mb-1">서체 선택</div>
+                                {FONT_FAMILIES.map(font => (
+                                    <button
+                                        key={font}
+                                        onClick={() => {
+                                            onUpdateTextElement(contextMenu.textId!, 'fontFamily', font);
+                                            setContextMenu(null);
+                                        }}
+                                        className="w-full text-left px-4 py-2 hover:bg-gray-100 text-sm"
+                                        style={{ fontFamily: font }}
+                                    >
+                                        {font}
+                                    </button>
                                 ))}
-                            </div>
-                            <div className="text-xs text-gray-600 mb-1">서체</div>
-                            <div className="flex flex-col gap-1">
-                                <button onClick={() => updateTextStyle('fontFamily', 'Pretendard, sans-serif')} className="text-left px-2 py-1 text-xs hover:bg-gray-50 rounded">Pretendard (기본)</button>
-                                <button onClick={() => updateTextStyle('fontFamily', 'serif')} className="text-left px-2 py-1 text-xs hover:bg-gray-50 rounded font-serif">Serif (명조)</button>
-                                <button onClick={() => updateTextStyle('fontFamily', 'monospace')} className="text-left px-2 py-1 text-xs hover:bg-gray-50 rounded font-mono">Mono (고정폭)</button>
-                            </div>
-                        </div>
+                                <div className="border-t mt-1 pt-1">
+                                    <button
+                                        onClick={() => {
+                                            onDeleteTextElement(contextMenu.textId!);
+                                            setContextMenu(null);
+                                        }}
+                                        className="w-full text-left px-4 py-2 hover:bg-red-50 text-sm text-red-600"
+                                    >
+                                        삭제
+                                    </button>
+                                </div>
+                            </>
+                        ) : (
+                            <button
+                                onClick={handleAddText}
+                                className="w-full text-left px-4 py-2 hover:bg-gray-100 text-sm"
+                            >
+                                텍스트 추가
+                            </button>
+                        )}
                     </div>
                 )}
-
-                {overlays.map((o, i) => (
-                    <div key={i} className="absolute group z-20 hover:ring-4 ring-blue-500/50 rounded-lg transition-all" style={{ top: o.top, left: o.left, width: o.width, height: o.height }}>
-                        <div className="absolute inset-0 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 bg-black/60 transition-opacity backdrop-blur-sm rounded-lg">
-                            <div className="flex gap-2 mb-2">
-                                <button onClick={() => onAction('regenerate', o.type, o.index)} className="p-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full transition-all shadow-lg hover:scale-110">
-                                    <RefreshCwIcon className="w-5 h-5" />
-                                </button>
-                                <button onClick={() => onAction('duplicate', o.type, o.index)} className="p-2.5 bg-green-600 hover:bg-green-700 text-white rounded-full transition-all shadow-lg hover:scale-110">
-                                    <CopyIcon className="w-5 h-5" />
-                                </button>
-                                <button onClick={() => onAction('delete', o.type, o.index)} className="p-2.5 bg-red-600 hover:bg-red-700 text-white rounded-full transition-all shadow-lg hover:scale-110">
-                                    <Trash2Icon className="w-5 h-5" />
-                                </button>
-                            </div>
-                            <div className="flex gap-2">
-                                <button onClick={() => onZoom(`${o.type}-${o.index}`, 'in')} className="p-1.5 bg-white/30 hover:bg-white/40 text-white rounded transition-all">
-                                    <PlusIcon className="w-4 h-4" />
-                                </button>
-                                <button onClick={() => onZoom(`${o.type}-${o.index}`, 'out')} className="p-1.5 bg-white/30 hover:bg-white/40 text-white rounded transition-all">
-                                    <MinusIcon className="w-4 h-4" />
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                ))}
             </div>
         </div>
     );
-};
+});
+
+PreviewPanel.displayName = 'PreviewPanel';

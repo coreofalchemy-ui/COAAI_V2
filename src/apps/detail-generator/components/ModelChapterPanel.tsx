@@ -8,9 +8,8 @@ interface ModelChapterPanelProps {
 }
 
 export default function ModelChapterPanel({ data, onUpdate }: ModelChapterPanelProps) {
-    // Reference Model Upload State
-    const [referenceFile, setReferenceFile] = useState<File | null>(null);
-    const [referencePreview, setReferencePreview] = useState<string | null>(null);
+    // Reference Face Upload State (최대 5장)
+    const [referenceFaces, setReferenceFaces] = useState<Array<{ file: File; preview: string }>>([]);
 
     // Face Generator State
     const [gender, setGender] = useState<'male' | 'female'>('female');
@@ -24,15 +23,28 @@ export default function ModelChapterPanel({ data, onUpdate }: ModelChapterPanelP
     const [compareSlider, setCompareSlider] = useState(50);
     const sliderRef = useRef<HTMLDivElement>(null);
 
-    // Handlers for Reference Upload
-    const handleReferenceUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) {
-            const file = e.target.files[0];
-            setReferenceFile(file);
-            const reader = new FileReader();
-            reader.onload = (e) => setReferencePreview(e.target?.result as string);
-            reader.readAsDataURL(file);
+    // Handlers for Reference Face Upload
+    const handleReferenceFaceUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files) {
+            const newFiles = Array.from(e.target.files).slice(0, 5 - referenceFaces.length);
+            const newFaces = newFiles.map(file => {
+                const reader = new FileReader();
+                return new Promise<{ file: File; preview: string }>((resolve) => {
+                    reader.onload = (e) => {
+                        resolve({ file, preview: e.target?.result as string });
+                    };
+                    reader.readAsDataURL(file);
+                });
+            });
+
+            Promise.all(newFaces).then(faces => {
+                setReferenceFaces(prev => [...prev, ...faces]);
+            });
         }
+    };
+
+    const removeReferenceFace = (index: number) => {
+        setReferenceFaces(prev => prev.filter((_, i) => i !== index));
     };
 
     // Handlers for Face Generator
@@ -42,7 +54,8 @@ export default function ModelChapterPanel({ data, onUpdate }: ModelChapterPanelP
         setSelectedFace(null);
         setUpscaledFace(null);
         try {
-            const faces = await generateFaceBatch(gender, race, age);
+            // 레퍼런스 얼굴이 있으면 믹스해서 생성
+            const faces = await generateFaceBatch(gender, race, age, referenceFaces.map(f => f.preview));
             setGeneratedFaces(faces);
         } catch (e) {
             alert('얼굴 생성 실패: ' + e);
@@ -82,16 +95,16 @@ export default function ModelChapterPanel({ data, onUpdate }: ModelChapterPanelP
         const blob = await res.blob();
         const file = new File([blob], `generated_face_${Date.now()}.png`, { type: 'image/png' });
 
-        // Update parent data (assuming we store model files in data.modelFiles)
-        // Note: This logic depends on how DetailGeneratorApp handles model files. 
-        // We might need to append to modelFiles or replace. For now, let's assume appending.
         const currentModelFiles = data.modelFiles || [];
+        const newFileUrl = URL.createObjectURL(file);
+
         onUpdate({
             ...data,
             modelFiles: [...currentModelFiles, file],
-            // Also update imageUrls.modelShots if needed, but usually that comes from generation.
-            // If this is just a reference face for generation, maybe we store it differently?
-            // The prompt implies this is "Model Chapter", so maybe it's for the model pool.
+            imageUrls: {
+                ...data.imageUrls,
+                modelShots: [...(data.imageUrls.modelShots || []), newFileUrl]
+            }
         });
 
         alert('모델 리스트에 추가되었습니다!');
@@ -99,43 +112,49 @@ export default function ModelChapterPanel({ data, onUpdate }: ModelChapterPanelP
 
     return (
         <div className="space-y-6">
-            {/* 1. Reference Model Upload */}
+            {/* 1. Reference Face Upload */}
             <div className="bg-purple-50 border-2 border-purple-200 rounded-xl p-4">
                 <h3 className="font-bold text-lg mb-3 text-purple-900 flex items-center gap-2">
-                    <UploadCloudIcon className="w-5 h-5" /> 레퍼런스 모델 업로드
+                    <UploadCloudIcon className="w-5 h-5" /> 레퍼런스 페이스 업로드
                 </h3>
                 <p className="text-xs text-gray-600 mb-3">
-                    원하는 포즈나 분위기의 모델 사진을 업로드하세요. AI가 이를 참고하여 촬영합니다.
+                    원하는 얼굴 사진을 최대 5장까지 업로드하세요. AI가 이를 참고하여 믹스된 새로운 얼굴을 생성합니다.
                 </p>
 
-                <div className="relative border-2 border-dashed border-purple-300 rounded-lg p-4 hover:bg-purple-100 transition-colors text-center cursor-pointer">
-                    <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleReferenceUpload}
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                    />
-                    {referencePreview ? (
-                        <div className="relative h-48 w-full">
-                            <img src={referencePreview} alt="Reference" className="w-full h-full object-contain rounded" />
-                            <button
-                                onClick={(e) => {
-                                    e.preventDefault();
-                                    setReferenceFile(null);
-                                    setReferencePreview(null);
-                                }}
-                                className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full shadow hover:bg-red-600"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                            </button>
+                {/* 업로드된 얼굴들 */}
+                {referenceFaces.length > 0 && (
+                    <div className="grid grid-cols-5 gap-2 mb-3">
+                        {referenceFaces.map((face, idx) => (
+                            <div key={idx} className="relative aspect-square">
+                                <img src={face.preview} alt={`Face ${idx}`} className="w-full h-full object-cover rounded border-2 border-purple-300" />
+                                <button
+                                    onClick={() => removeReferenceFace(idx)}
+                                    className="absolute -top-1 -right-1 bg-red-500 text-white p-0.5 rounded-full shadow hover:bg-red-600"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {/* 업로드 버튼 */}
+                {referenceFaces.length < 5 && (
+                    <div className="relative border-2 border-dashed border-purple-300 rounded-lg p-4 hover:bg-purple-100 transition-colors text-center cursor-pointer">
+                        <input
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            onChange={handleReferenceFaceUpload}
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                        />
+                        <div className="flex flex-col items-center justify-center py-4 text-purple-400">
+                            <UploadCloudIcon className="w-8 h-8 mb-2" />
+                            <span className="text-sm font-medium">클릭하여 얼굴 이미지 업로드</span>
+                            <span className="text-xs text-gray-500 mt-1">({referenceFaces.length}/5)</span>
                         </div>
-                    ) : (
-                        <div className="flex flex-col items-center justify-center py-8 text-purple-400">
-                            <UploadCloudIcon className="w-12 h-12 mb-2" />
-                            <span className="text-sm font-medium">클릭하여 이미지 업로드</span>
-                        </div>
-                    )}
-                </div>
+                    </div>
+                )}
             </div>
 
             {/* 2. AI Face Studio */}
@@ -178,8 +197,8 @@ export default function ModelChapterPanel({ data, onUpdate }: ModelChapterPanelP
                     onClick={handleGenerate}
                     disabled={isGenerating}
                     className={`w-full py-3 rounded-lg font-bold text-sm flex items-center justify-center gap-2 transition-all ${isGenerating
-                            ? 'bg-gray-600 cursor-not-allowed'
-                            : 'bg-blue-600 hover:bg-blue-500 shadow-lg hover:shadow-blue-500/30'
+                        ? 'bg-gray-600 cursor-not-allowed'
+                        : 'bg-blue-600 hover:bg-blue-500 shadow-lg hover:shadow-blue-500/30'
                         }`}
                 >
                     {isGenerating ? (

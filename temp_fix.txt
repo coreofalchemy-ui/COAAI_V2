@@ -1,2 +1,0 @@
-              <span className="text-2xl">+</span>
-              문구 추가하기

@@ -320,6 +320,38 @@ export function populateTemplate(
     sectionOrder.forEach(sectionKey => {
         if (sectionsMap[sectionKey]) {
             sectionsHtml += sectionsMap[sectionKey];
+        } else if (imageUrls[sectionKey]) {
+            // Custom Section Handling
+            const imageUrl = imageUrls[sectionKey];
+            if (imageUrl && imageUrl.includes('placeholder')) {
+                // Render Drop Zone
+                sectionsHtml += `
+                    <div data-section="${sectionKey}" class="drop-zone" style="
+                        margin: 20px 0;
+                        height: 300px;
+                        border: 3px dashed #e5e7eb;
+                        border-radius: 12px;
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        justify-content: center;
+                        background-color: #f9fafb;
+                        cursor: pointer;
+                        transition: all 0.2s;
+                    ">
+                        <div style="font-size: 48px; margin-bottom: 16px;">📷</div>
+                        <div style="font-size: 16px; font-weight: 600; color: #6b7280;">이미지를 드래그하여 업로드하세요</div>
+                        <div style="font-size: 12px; color: #9ca3af; margin-top: 8px;">또는 클릭하여 선택</div>
+                    </div>
+                `;
+            } else {
+                // Render Image
+                sectionsHtml += `
+                    <div data-section="${sectionKey}" style="margin-top: 0px;">
+                        <img src="${imageUrl}" style="width: 100%; display: block;" />
+                    </div>
+                `;
+            }
         }
     });
 
@@ -394,11 +426,51 @@ function getImageUrlFromResponse(response: any): string {
     throw new Error('No image found in the response.');
 }
 
-export const generateFaceBatch = async (gender: 'male' | 'female', race: string, age: string): Promise<string[]> => {
-    // Face generation implementation
-    return [];
+
+export const generateFaceBatch = async (gender: 'male' | 'female', race: string, age: string, referenceFaces: string[] = []): Promise<string[]> => {
+    let prompt = '';
+    let parts: any[] = [];
+
+    if (referenceFaces.length > 0) {
+        // 레퍼런스 얼굴들을 믹스하여 생성
+        prompt = `**TASK:** Generate a NEW photorealistic face that is INSPIRED BY but DIFFERENT from the reference faces. 
+        
+CRITICAL REQUIREMENTS:
+- Create a UNIQUE individual that looks SIMILAR but NOT IDENTICAL to the references
+- Mix and blend features from the reference faces naturally
+- Age: ${age} years old
+- Gender: ${gender}
+- Ethnicity: ${race}
+- The result should look like a REAL PERSON with their own identity
+- Professional studio lighting, neutral expression, high quality, sharp focus
+- DO NOT copy any reference face exactly - create a NEW person
+
+Think of it as creating a family member or someone with similar features, but clearly a different person.`;
+
+        // 레퍼런스 얼굴들을 parts에 추가
+        referenceFaces.forEach((faceUrl, idx) => {
+            parts.push({ text: `REFERENCE FACE ${idx + 1}:` });
+            parts.push(urlToPart(faceUrl));
+        });
+    } else {
+        // 레퍼런스가 없으면 기존 방식대로
+        prompt = `Generate a photorealistic portrait of a ${age} year old ${race} ${gender} model face. Professional studio lighting, neutral expression, high quality, sharp focus.`;
+    }
+
+    // Generate 4 variations in parallel
+    const promises = Array(4).fill(null).map(() => generateImage(prompt, parts));
+
+    try {
+        const results = await Promise.all(promises);
+        return results;
+    } catch (error) {
+        console.error('Face batch generation failed:', error);
+        return [];
+    }
 };
 
 export const upscaleFace = async (base64Image: string): Promise<string> => {
-    return base64Image;
+    const basePart = urlToPart(base64Image);
+    const prompt = `**TASK:** UPSCALE AND REFINE. Generate a high-resolution, highly detailed version of this face. Improve skin texture, lighting, and sharpness while maintaining the exact identity and features.`;
+    return generateImage(prompt, [{ text: "BASE:" }, basePart]);
 };

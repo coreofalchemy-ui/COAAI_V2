@@ -1,18 +1,14 @@
 import React, { useState } from 'react';
 import { generateAICopywriting } from '../services/geminiAICopywriter';
-import ProductEnhancementPanel from './ProductEnhancementPanel';
-import { ProductEnhancementResult } from '../services/productEnhancement';
 import ModelChapterPanel from './ModelChapterPanel';
+import ProductEnhancementPanel from './ProductEnhancementPanel';
 
 interface AdjustmentPanelProps {
     data: any;
     onUpdate: (newData: any) => void;
     showAIAnalysis?: boolean;
     onToggleAIAnalysis?: () => void;
-    showSubHero1?: boolean;
-    onToggleSubHero1?: () => void;
-    showSubHero2?: boolean;
-    onToggleSubHero2?: () => void;
+    onAddSection?: () => void;
 }
 
 type Section = 'hero' | 'products' | 'models' | 'closeup';
@@ -85,14 +81,10 @@ export default function AdjustmentPanel({
     onUpdate,
     showAIAnalysis,
     onToggleAIAnalysis,
-    showSubHero1,
-    onToggleSubHero1,
-    showSubHero2,
-    onToggleSubHero2
+    onAddSection
 }: AdjustmentPanelProps) {
     const [activeSection, setActiveSection] = useState<Section>('hero');
     const [isGeneratingAI, setIsGeneratingAI] = useState(false);
-    const [productResults, setProductResults] = useState<ProductEnhancementResult[]>([]);
 
     const updateHeroContent = (field: string, value: string) => {
         onUpdate({
@@ -323,31 +315,6 @@ export default function AdjustmentPanel({
                                         📥 히어로 섹션 HTML 다운로드
                                     </button>
                                 </div>
-
-                                {/* Sub Hero Sections */}
-                                <div className="pt-3 mt-3 border-t border-blue-300">
-                                    <label className="block text-xs font-bold text-gray-700 mb-2">➕ 서브 히어로 섹션 추가</label>
-                                    <div className="flex gap-2">
-                                        <button
-                                            onClick={onToggleSubHero1}
-                                            className={`flex-1 py-2 rounded text-xs font-bold transition-colors ${showSubHero1
-                                                    ? 'bg-blue-600 text-white'
-                                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                                }`}
-                                        >
-                                            {showSubHero1 ? '✅ 서브히어로 1 ON' : '서브히어로 1 추가'}
-                                        </button>
-                                        <button
-                                            onClick={onToggleSubHero2}
-                                            className={`flex-1 py-2 rounded text-xs font-bold transition-colors ${showSubHero2
-                                                    ? 'bg-blue-600 text-white'
-                                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                                }`}
-                                        >
-                                            {showSubHero2 ? '✅ 서브히어로 2 ON' : '서브히어로 2 추가'}
-                                        </button>
-                                    </div>
-                                </div>
                             </div>
                         </div>
                     </div>
@@ -355,36 +322,43 @@ export default function AdjustmentPanel({
 
                 {/* Products Section */}
                 {activeSection === 'products' && (
-                    <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4">
-                        <h3 className="font-bold text-lg mb-4 text-green-900">📦 제품 이미지 AI 에디터</h3>
-                        {data.productFiles && data.productFiles.length > 0 ? (
-                            <ProductEnhancementPanel
-                                productFiles={data.productFiles}
-                                onResultsUpdate={setProductResults}
-                            />
-                        ) : (
-                            <div className="text-center text-gray-500 py-8">
-                                제품 이미지를 먼저 업로드해주세요.
-                            </div>
-                        )}
+                    <div className="space-y-4">
+                        <ProductEnhancementPanel
+                            productFiles={data.productFiles || []}
+                            onResultsUpdate={(results) => {
+                                const doneResults = results.filter(r => r.status === 'done' && r.url);
+                                if (doneResults.length > 0) {
+                                    const newUrls = doneResults.map(r => r.url!);
+                                    // Avoid duplicates
+                                    const currentUrls = data.imageUrls?.products || [];
+                                    const uniqueNewUrls = newUrls.filter(url => !currentUrls.includes(url));
+
+                                    if (uniqueNewUrls.length > 0) {
+                                        onUpdate({
+                                            ...data,
+                                            imageUrls: {
+                                                ...data.imageUrls,
+                                                products: [...currentUrls, ...uniqueNewUrls]
+                                            }
+                                        });
+                                    }
+                                }
+                            }}
+                        />
                     </div>
                 )}
 
                 {/* Models Section */}
                 {activeSection === 'models' && (
-                    <ModelChapterPanel
-                        data={data}
-                        onUpdate={onUpdate}
-                    />
+                    <div className="space-y-4">
+                        <ModelChapterPanel data={data} onUpdate={onUpdate} />
+                    </div>
                 )}
 
                 {/* Closeup Section */}
                 {activeSection === 'closeup' && (
-                    <div className="bg-orange-50 border-2 border-orange-200 rounded-xl p-4">
-                        <h3 className="font-bold text-lg mb-3 text-orange-900">🔍 디테일 뷰</h3>
-                        <p className="text-sm text-gray-600">
-                            총 {data.imageUrls?.closeupShots?.length || 0}개 이미지
-                        </p>
+                    <div className="space-y-4">
+                        {/* Manual image management removed as per request */}
                     </div>
                 )}
             </div>
