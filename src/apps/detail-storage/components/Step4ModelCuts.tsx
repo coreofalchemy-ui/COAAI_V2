@@ -28,6 +28,7 @@ const Step4ModelCuts: React.FC<Step4ModelCutsProps> = ({ productImages, onAddToP
     const [ethnicity, setEthnicity] = useState<ModelEthnicity>('한국인');
     const [generatedFaces, setGeneratedFaces] = useState<string[]>([]);
     const [previewFace, setPreviewFace] = useState<string | null>(null);
+    const [selectedFace, setSelectedFace] = useState<string | null>(null);
 
     // Reference Photos State
     const [referencePhotos, setReferencePhotos] = useState<UploadedImage[]>([]);
@@ -573,6 +574,8 @@ const Step4ModelCuts: React.FC<Step4ModelCutsProps> = ({ productImages, onAddToP
                         </div>
                     </div>
                 </div>
+            )}
+
             {/* Single Face Preview Modal */}
             {previewFace && (
                 <div

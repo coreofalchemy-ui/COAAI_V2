@@ -7,6 +7,12 @@ import ModelChapterPanel from './ModelChapterPanel';
 interface AdjustmentPanelProps {
     data: any;
     onUpdate: (newData: any) => void;
+    showAIAnalysis?: boolean;
+    onToggleAIAnalysis?: () => void;
+    showSubHero1?: boolean;
+    onToggleSubHero1?: () => void;
+    showSubHero2?: boolean;
+    onToggleSubHero2?: () => void;
 }
 
 type Section = 'hero' | 'products' | 'models' | 'closeup';
@@ -74,7 +80,16 @@ const generateStandaloneHeroHTML = (data: any): string => {
 </html>`;
 };
 
-export default function AdjustmentPanel({ data, onUpdate }: AdjustmentPanelProps) {
+export default function AdjustmentPanel({
+    data,
+    onUpdate,
+    showAIAnalysis,
+    onToggleAIAnalysis,
+    showSubHero1,
+    onToggleSubHero1,
+    showSubHero2,
+    onToggleSubHero2
+}: AdjustmentPanelProps) {
     const [activeSection, setActiveSection] = useState<Section>('hero');
     const [isGeneratingAI, setIsGeneratingAI] = useState(false);
     const [productResults, setProductResults] = useState<ProductEnhancementResult[]>([]);
@@ -307,6 +322,31 @@ export default function AdjustmentPanel({ data, onUpdate }: AdjustmentPanelProps
                                     >
                                         📥 히어로 섹션 HTML 다운로드
                                     </button>
+                                </div>
+
+                                {/* Sub Hero Sections */}
+                                <div className="pt-3 mt-3 border-t border-blue-300">
+                                    <label className="block text-xs font-bold text-gray-700 mb-2">➕ 서브 히어로 섹션 추가</label>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={onToggleSubHero1}
+                                            className={`flex-1 py-2 rounded text-xs font-bold transition-colors ${showSubHero1
+                                                    ? 'bg-blue-600 text-white'
+                                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                                }`}
+                                        >
+                                            {showSubHero1 ? '✅ 서브히어로 1 ON' : '서브히어로 1 추가'}
+                                        </button>
+                                        <button
+                                            onClick={onToggleSubHero2}
+                                            className={`flex-1 py-2 rounded text-xs font-bold transition-colors ${showSubHero2
+                                                    ? 'bg-blue-600 text-white'
+                                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                                }`}
+                                        >
+                                            {showSubHero2 ? '✅ 서브히어로 2 ON' : '서브히어로 2 추가'}
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>

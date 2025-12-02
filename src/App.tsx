@@ -2,7 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Layout } from './components/shared/Layout';
 import { Home } from './Home';
 import { ModelGeneratorApp } from './apps/model-generator/ModelGeneratorApp';
-import { DetailGeneratorApp } from './apps/detail-generator/DetailGeneratorApp';
+import DetailGeneratorApp from './apps/detail-generator/DetailGeneratorApp';
 
 import { ShoeEditorApp } from './apps/shoe-editor/ShoeEditorApp';
 import { ContentGeneratorApp } from './apps/content-generator/ContentGeneratorApp';

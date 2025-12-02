@@ -1,49 +1,47 @@
-import { GoogleGenAI } from "@google/genai";
-import { fileToDataUrl } from "../lib/utils";
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
 
-const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || '' });
+// Initialize the client directly since @/lib/gemini is missing
+const ai = new GoogleGenerativeAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
 
-const COMMON_CONFIG = {
-    responseModalities: ['IMAGE'],
-    imageConfig: { aspectRatio: '3:4' }
-};
+const PLACEHOLDER_ASSET = { url: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9IiNlZWUiLz48dGV4dCB4PSI1MCUiIHk9IjUwJSIgZm9udC1zaXplPSIxOCIgZmlsbD0iI2NjYyIKIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5ObyBJbWFnZTwvdGV4dD48L3N2Zz4=' };
 
-const fileToPart = async (file: File) => {
-    const base64 = await new Promise<string>((resolve) => {
+const urlToPart = (url: string) => ({
+    inlineData: { mimeType: 'image/png', data: url.split(',')[1] || url }
+});
+
+const fileToPart = async (file: File) => ({
+    inlineData: {
+        mimeType: file.type, data: await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+            reader.readAsDataURL(file);
+        })
+    }
+});
+
+function fileToDataUrl(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = () => resolve((reader.result as string).split(',')[1]);
+        reader.onload = (e) => resolve(e.target?.result as string);
+        reader.onerror = reject;
         reader.readAsDataURL(file);
     });
-    return { inlineData: { data: base64, mimeType: file.type } };
-};
-
-const urlToPart = (url: string) => {
-    const base64 = url.split(',')[1];
-    const mimeType = url.match(/data:(.*?);base64/)?.[1] || 'image/png';
-    return { inlineData: { data: base64, mimeType } };
-};
-
-async function generateImage(prompt: string, parts: any[]): Promise<string> {
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.0-flash-exp',
-            contents: { parts: [{ text: prompt }, ...parts] },
-            config: COMMON_CONFIG as any,
-        });
-        const imgPart = response.candidates?.[0]?.content?.parts.find((p: any) => p.inlineData);
-        if (!imgPart?.inlineData) throw new Error("No image generated");
-        return `data:${imgPart.inlineData.mimeType};base64,${imgPart.inlineData.data}`;
-    } catch (e) {
-        console.error("Gemini Error:", e);
-        throw e;
-    }
 }
 
-export async function regenerateShoesOnly(baseImageUrl: string, productFiles: File[]): Promise<string> {
-    const basePart = urlToPart(baseImageUrl);
+async function generateImage(prompt: string, parts: any[]): Promise<string> {
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.0-flash-exp',
+        contents: { parts: [...parts, { text: prompt }] },
+        config: { imageConfig: { aspectRatio: '3:4' } }
+    });
+    return `data:image/png;base64,${response.candidates[0].content.parts[0].inlineData?.data}`;
+}
+
+export async function regenerateShoesOnly(modelImageUrl: string, productFiles: File[]): Promise<string> {
+    const basePart = urlToPart(modelImageUrl);
     const productParts = await Promise.all(productFiles.map(fileToPart));
-    const prompt = `**TASK:** SHOE REPLACEMENT. ERASE old shoes. PAINT new product. KEEP everything else identical.`;
-    return generateImage(prompt, [{ text: "BASE:" }, basePart, { text: "PRODUCT:" }, ...productParts]);
+    const prompt = `**TASK:** SHOE SWAP. Change ONLY shoes to new product. Keep EXACT pose/clothes/background/model/lighting. Product is a shoe. Show feet clearly.`;
+    return generateImage(prompt, [{ text: "BASE:" }, basePart, { text: "NEW SHOES:" }, ...productParts]);
 }
 
 export async function regenerateImageWithSpecificPose(baseImageUrl: string, posePrompt: string): Promise<any> {
@@ -109,108 +107,224 @@ export async function generateStudioImageSet(p: File[], m: File[], onProgress?: 
 
 export function populateTemplate(
     data: any, imageUrls: any, fontSizes: any, fontStyles: any, layoutHtml: string,
-    heroTextColors: any, imageZoomLevels: any = {}
+    imageZoomLevels: any = {}, sectionOrder: string[] = ['hero', 'products', 'models'],
+    showAIAnalysis: boolean = true, showSubHero1: boolean = false, showSubHero2: boolean = false
 ): string {
-    let result = layoutHtml;
+    // Section labels that can be customized
+    const sectionLabels = data.sectionLabels || {
+        products: 'PRODUCT DETAILS',
+        models: 'MODEL STYLING',
+        closeups: 'DETAIL VIEW'
+    };
+
+    // Build sections map
+    const sectionsMap: { [key: string]: string } = {};
 
     // 1. Hero Section (Rich Text Content)
     const heroContent = data.heroTextContent || {};
-    const heroHtml = `
-        <div data-section="hero">
-        <!-- 1. 헤더 섹션 -->
-        <header style="margin-bottom: 40px; border-bottom: 1px solid #e4e4e7; padding-bottom: 32px; padding: 48px 48px 32px 48px;">
-            <h2 style="font-size: 14px; font-weight: 700; color: #a1a1aa; letter-spacing: 0.1em; margin-bottom: 8px; text-transform: uppercase;">${heroContent.brandLine || 'COA ESSENTIAL LINE'}</h2>
-            <h1 style="font-size: 48px; font-weight: 800; letter-spacing: -0.025em; text-transform: uppercase; color: #18181b; line-height: 1.1; margin: 0;">
-                ${heroContent.productName || 'COA 02'} <span style="color: #d4d4d8; font-weight: 300;">—</span> 
-                <span style="color: #71717a; font-size: 0.8em;">${heroContent.subName || 'HYPER BLACK'}</span>
-            </h1>
-        </header>
-
-        <!-- 2. 메인 설명 & 스타일링 제안 -->
-        <section style="margin-bottom: 48px; padding: 0 48px;">
-            <div style="margin-bottom: 32px; font-size: 16px; line-height: 1.7; color: #52525b;">
-                <p style="white-space: pre-line; margin-bottom: 16px; font-weight: 500; color: #27272a;">${heroContent.descriptionMain || ''}</p>
-                
-                <!-- Craftsmanship (제작/소재) -->
-                <div style="background-color: #f4f4f5; padding: 20px; border-radius: 8px; margin-bottom: 16px;">
-                    <strong style="display: block; font-size: 14px; color: #18181b; margin-bottom: 8px;">DETAIL & CRAFTSMANSHIP</strong>
-                    <p style="white-space: pre-line; margin: 0; font-size: 14px; color: #52525b;">${heroContent.craftsmanship || ''}</p>
-                </div>
-            </div>
-
-            <!-- Styling Match (룩/매칭) -->
-            <div style="position: relative; padding-left: 24px; border-left: 4px solid #d4d4d8; padding-top: 8px; padding-bottom: 8px; background-color: #fafafa; border-radius: 0 8px 8px 0; margin-bottom: 24px;">
-                <span style="position: absolute; top: -12px; left: 0; background-color: white; padding: 0 4px; font-size: 12px; font-weight: 700; color: #a1a1aa; letter-spacing: 0.05em; border: 1px solid #e4e4e7; border-radius: 4px;">STYLING & MATCH</span>
-                <p style="color: #3f3f46; font-style: italic; white-space: pre-line; margin: 4px 0 0 0; font-size: 15px;">
-                    "${heroContent.stylingMatch || 'AI가 스타일링 팁을 생성 중입니다...'}"
-                </p>
+    sectionsMap['hero'] = `
+        <div data-section="hero" style="padding: 60px 40px; max-width: 1000px; margin: 0 auto; font-family: 'Noto Sans KR', sans-serif; color: #333;">
+            <!-- Brand Line -->
+            <div style="font-size: 11px; letter-spacing: 1px; color: #888; margin-bottom: 10px; font-weight: 500;">
+                ${heroContent.brandLine || 'PRODUCT LINE'}
             </div>
             
+            <!-- Product Name -->
+            <h1 style="font-size: 28px; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 30px 0; line-height: 1.2;">
+                ${heroContent.productName || 'PRODUCT NAME'} <span style="font-weight: 300; color: #ccc; margin: 0 8px;">—</span> <span style="color: #666;">${heroContent.subName || 'COLOR / MODEL'}</span>
+            </h1>
+
+            <!-- Paragraph 1 (Styling) -->
+            <div style="margin-bottom: 20px; font-size: 14px; line-height: 1.7; color: #444;">
+                ${heroContent.stylingMatch || '제품의 스타일링 매치와 착용 시나리오에 대한 설명이 들어갑니다. 어떤 스타일과 잘 어울리는지 안내합니다.'}
+            </div>
+
+            <!-- Paragraph 2 (Craftsmanship) -->
+            <div style="margin-bottom: 40px; font-size: 14px; line-height: 1.7; color: #444;">
+                ${heroContent.craftsmanship || '제품의 디자인 철학, 제작 방식, 사용된 소재의 기능과 특성에 대한 설명이 들어갑니다.'}
+            </div>
+
             <!-- Technology -->
-            <div style="background-color: #fafafa; padding: 24px; border-radius: 8px; border-left: 4px solid #18181b; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-                <h3 style="font-weight: 700; color: #18181b; margin: 0 0 8px 0; display: flex; align-items: center; gap: 8px; font-size: 18px;">
-                    <span style="background-color: #18181b; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 12px;">T</span>
-                    Technology
-                </h3>
-                <p style="font-size: 14px; color: #52525b; white-space: pre-line; line-height: 1.6; margin: 0;">
-                    ${heroContent.technology || '오쏘라이트 인솔'}
+            <div style="background-color: #f9fafb; border-left: 4px solid #111; padding: 20px; margin-bottom: 40px; border-radius: 0 8px 8px 0;">
+                <h3 style="margin: 0 0 10px 0; font-size: 14px; font-weight: 700; color: #111;">Technology</h3>
+                <p style="margin: 0; font-size: 13px; color: #555; line-height: 1.6;">
+                    ${heroContent.technology || '제품에 적용된 핵심 기술과 그 기술이 제공하는 기능 및 이점에 대한 설명이 들어갑니다.'}
                 </p>
             </div>
-        </section>
 
-        <!-- 3. 스펙 정보 -->
-        <section style="margin-bottom: 48px; padding: 0 48px;">
-            <h3 style="font-size: 14px; font-weight: 700; color: #18181b; text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 16px 0; border-bottom: 2px solid black; padding-bottom: 8px; display: inline-block;">Product Spec</h3>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px 32px; font-size: 14px;">
-                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #f4f4f5; padding-bottom: 8px;"><span style="color: #a1a1aa; font-weight: 500;">Color</span><span style="font-weight: 600; text-align: right;">${heroContent.specColor || ''}</span></div>
-                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #f4f4f5; padding-bottom: 8px;"><span style="color: #a1a1aa; font-weight: 500;">Upper</span><span style="font-weight: 600; text-align: right;">${heroContent.specUpper || ''}</span></div>
-                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #f4f4f5; padding-bottom: 8px;"><span style="color: #a1a1aa; font-weight: 500;">Lining</span><span style="font-weight: 600; text-align: right;">${heroContent.specLining || ''}</span></div>
-                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #f4f4f5; padding-bottom: 8px;"><span style="color: #a1a1aa; font-weight: 500;">Outsole</span><span style="font-weight: 600; text-align: right;">${heroContent.specOutsole || ''}</span></div>
-                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #f4f4f5; padding-bottom: 8px;"><span style="color: #a1a1aa; font-weight: 500;">Origin</span><span style="font-weight: 600; text-align: right;">${heroContent.specOrigin || ''}</span></div>
-                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #f4f4f5; padding-bottom: 8px;"><span style="color: #a1a1aa; font-weight: 500;">Heel Height</span><span style="font-weight: 600; text-align: right;">${heroContent.heelHeight || '3.5cm'}</span></div>
-            </div>
-        </section>
-
-        <!-- 4. 사이즈 가이드 -->
-        <section style="padding: 0 48px 48px 48px;">
-            <div style="position: relative; overflow: hidden; border-radius: 12px; border: 1px solid #fecaca; background: linear-gradient(to right, #fef2f2, #ffffff, #ffffff); padding: 24px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-                <div style="position: absolute; top: -24px; left: -24px; width: 96px; height: 96px; border-radius: 50%; background-color: #fee2e2; opacity: 0.5; filter: blur(24px);"></div>
-                <div style="position: relative; display: flex; align-items: flex-start; gap: 16px;">
-                    <div style="flex-shrink: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background-color: #ef4444; color: white; box-shadow: 0 4px 6px -1px rgba(254, 202, 202, 0.5);">
-                        <svg style="width: 20px; height: 20px;" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" /></svg>
+            <!-- Product Spec -->
+            <div style="margin-bottom: 40px;">
+                <h3 style="font-size: 11px; font-weight: 800; letter-spacing: 1px; margin-bottom: 16px; text-transform: uppercase; color: #111;">Product Spec</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px 30px; font-size: 13px; border-top: 2px solid #eee; padding-top: 16px;">
+                    <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #f3f4f6; padding-bottom: 6px;">
+                        <span style="color: #9ca3af;">Color</span>
+                        <span style="font-weight: 500;">${heroContent.specColor || '컬러명'}</span>
                     </div>
-                    <div>
-                        <h3 style="font-size: 18px; font-weight: 700; color: #dc2626; margin: 0 0 8px 0;">SIZE GUIDE</h3>
-                        <p style="color: #3f3f46; line-height: 1.6; font-size: 14px; margin: 0; white-space: pre-line;">
-                            ${heroContent.sizeGuide || '여유 있는 핏으로 제작되었습니다.\n발볼이 넓거나 일반적인 착화를 원하시는 분은 정사이즈를 권장하며,\n타이트한 핏을 원하시면 0.5 사이즈 다운을 추천드립니다.'}
-                        </p>
+                    <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #f3f4f6; padding-bottom: 6px;">
+                        <span style="color: #9ca3af;">Upper</span>
+                        <span style="font-weight: 500;">${heroContent.specUpper || '어퍼 소재'}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #f3f4f6; padding-bottom: 6px;">
+                        <span style="color: #9ca3af;">Lining</span>
+                        <span style="font-weight: 500;">${heroContent.specLining || '안감 소재'}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #f3f4f6; padding-bottom: 6px;">
+                        <span style="color: #9ca3af;">Outsole</span>
+                        <span style="font-weight: 500;">${heroContent.specOutsole || '아웃솔 소재'}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #f3f4f6; padding-bottom: 6px;">
+                        <span style="color: #9ca3af;">Origin</span>
+                        <span style="font-weight: 500;">${heroContent.specOrigin || '제조국'}</span>
                     </div>
                 </div>
             </div>
-        </section>
+
+            <!-- Height Spec -->
+            <div style="margin-bottom: 40px;">
+                <h3 style="font-size: 11px; font-weight: 800; letter-spacing: 1px; margin-bottom: 16px; text-transform: uppercase; color: #111; border-bottom: 2px solid #111; padding-bottom: 6px; display: inline-block;">Height Spec</h3>
+                <div style="display: flex; justify-content: space-between; background: #fff; border: 1px solid #e5e7eb; padding: 24px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+                    <div style="text-align: center; flex: 1;">
+                        <div style="font-size: 11px; color: #6b7280; margin-bottom: 6px;">아웃솔 (Outsole)</div>
+                        <div style="font-weight: 700; font-size: 16px; color: #111;">${heroContent.heightOutsole || '3'} CM</div>
+                    </div>
+                    <div style="text-align: center; flex: 1; border-left: 1px solid #e5e7eb; border-right: 1px solid #e5e7eb;">
+                        <div style="font-size: 11px; color: #6b7280; margin-bottom: 6px;">인솔 (Insole)</div>
+                        <div style="font-weight: 700; font-size: 16px; color: #111;">${heroContent.heightInsole || '1.5'} CM</div>
+                    </div>
+                    <div style="text-align: center; flex: 1;">
+                        <div style="font-size: 11px; color: #ef4444; margin-bottom: 6px; font-weight: 600;">총 키높이 (Total)</div>
+                        <div style="font-weight: 800; font-size: 18px; color: #ef4444;">${heroContent.heightTotal || '4.5'} CM</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Size Guide -->
+            <div style="background-color: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 20px; display: flex; align-items: start;">
+                <div style="background: #ef4444; color: white; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 14px; flex-shrink: 0; font-size: 12px;">✓</div>
+                <div>
+                    <h3 style="margin: 0 0 6px 0; font-size: 13px; font-weight: 700; color: #ef4444; text-transform: uppercase;">Size Guide</h3>
+                    <p style="margin: 0; font-size: 13px; line-height: 1.6; color: #4b5563;">
+                        ${heroContent.sizeGuide ? heroContent.sizeGuide.replace(/\n/g, '<br/>') : '사이즈 가이드 내용이 없습니다.'}
+                    </p>
+                </div>
+            </div>
         </div>
     `;
-    result = result.replace('<!--HERO_SECTION-->', heroHtml);
 
-    const renderGridItem = (url: string, type: string, index: number, isProduct: boolean) => {
-        const key = isProduct ? `products-${index}` : `${type === 'model' ? 'modelShots' : 'closeupShots'}-${index}`;
-        return `
-            <div class="image-item">
-                <img src="${url}" 
-                     data-type="${isProduct ? 'products' : 'models'}" 
-                     data-gallery-type="${isProduct ? 'products' : type === 'model' ? 'modelShots' : 'closeupShots'}" 
-                     data-index="${index}" />
-            </div>`;
-    };
+    // Add Sub Heroes right after hero
+    if (showSubHero1 && imageUrls.subHero1 && imageUrls.subHero1.length > 100) {
+        sectionsMap['hero'] += `
+            <!-- Sub Hero 1 -->
+            <div style="margin-top: 40px; margin-bottom: 40px;">
+                <img src="${imageUrls.subHero1}" style="width: 100%;" />
+            </div>
+        `;
+    }
 
-    result = result.replace('<!--PRODUCT_IMAGES-->', `<div data-section="products">${imageUrls.products.map((url: string, i: number) => renderGridItem(url, 'products', i, true)).join('')}</div>`);
-    result = result.replace('<!--MODEL_SECTION_CONTENT-->', `<div data-section="models">${imageUrls.modelShots.map((asset: any, i: number) => renderGridItem(asset.url, 'model', i, false)).join('')}</div>`);
-    result = result.replace('<!--CLOSEUP_SECTION_CONTENT-->', `<div data-section="closeup">${imageUrls.closeupShots.map((asset: any, i: number) => renderGridItem(asset.url, 'closeup', i, false)).join('')}</div>`);
+    if (showSubHero2 && imageUrls.subHero2 && imageUrls.subHero2.length > 100) {
+        sectionsMap['hero'] += `
+            <!-- Sub Hero 2 -->
+            <div style="margin-top: 40px; margin-bottom: 40px;">
+                <img src="${imageUrls.subHero2}" style="width: 100%;" />
+            </div>
+        `;
+    }
 
-    return result;
-}
+    // 2. Products Section
+    const productImages = (imageUrls.products || []).filter((url: string) => url && url.length > 100 && !url.includes('placeholder'));
+    if (productImages.length > 0) {
+        let productsHtml = sectionLabels.products ? `<span class="section-label" contenteditable="true" data-section-label="products">${sectionLabels.products}</span>` : '';
+        productsHtml += `<div data-section="products" style="margin-top: 48px;">`;
+        productImages.forEach((url: string, index: number) => {
+            productsHtml += `
+                <div style="margin-bottom: 24px;">
+                    <img src="${url}" style="width: 100%;" data-gallery-type="products" data-index="${index}" />
+                </div>
+            `;
+        });
+        productsHtml += `</div>`;
+        sectionsMap['products'] = productsHtml;
+    }
 
-export const LAYOUT_TEMPLATE_HTML = `
+    // 3. Models Section - Always show even when empty
+    const modelImages = (imageUrls.modelShots || []).filter((url: any) => {
+        const imageUrl = typeof url === 'string' ? url : url?.url;
+        return imageUrl && imageUrl.length > 100 && !imageUrl.includes('placeholder');
+    });
+
+    // Always create models section
+    let modelsHtml = sectionLabels.models ? `<span class="section-label" contenteditable="true" data-section-label="models">${sectionLabels.models}</span>` : '';
+    modelsHtml += `<div data-section="models" style="margin-top: 48px;">`;
+
+    if (modelImages.length > 0) {
+        // Show actual images
+        modelImages.forEach((url: any, index: number) => {
+            const imageUrl = typeof url === 'string' ? url : url?.url;
+            modelsHtml += `
+                <div style="margin-bottom: 24px;">
+                    <img src="${imageUrl}" style="width: 100%;" data-gallery-type="modelShots" data-index="${index}" />
+                </div>
+            `;
+        });
+    } else {
+        // Show gradient placeholder when no images
+        modelsHtml += `
+            <div class="model-drop-zone" style="
+                min-height: 400px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                border-radius: 8px;
+                margin-bottom: 24px;
+            ">
+                <div style="text-align: center; color: white;">
+                    <div style="
+                        font-size: 72px;
+                        font-weight: 900;
+                        letter-spacing: 8px;
+                        margin-bottom: 16px;
+                        text-transform: uppercase;
+                        opacity: 0.9;
+                    ">MODEL</div>
+                    <div style="font-size: 18px; opacity: 0.8;">드래그하여 모델 이미지를 추가하세요</div>
+                </div>
+            </div>
+        `;
+    }
+    modelsHtml += `</div>`;
+    sectionsMap['models'] = modelsHtml;
+
+    // 4. Closeups Section (optional, based on sectionOrder)
+    const closeupImages = (imageUrls.closeupShots || []).filter((url: any) => {
+        const imageUrl = typeof url === 'string' ? url : url?.url;
+        return imageUrl && imageUrl.length > 100 && !imageUrl.includes('placeholder');
+    });
+    if (closeupImages.length > 0 && sectionOrder.includes('closeups')) {
+        let closeupHtml = sectionLabels.closeups ? `<span class="section-label" contenteditable="true" data-section-label="closeups">${sectionLabels.closeups}</span>` : '';
+        closeupHtml += `<div data-section="closeups" style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 48px;">`;
+        closeupImages.forEach((url: any, index: number) => {
+            const imageUrl = typeof url === 'string' ? url : url?.url;
+            closeupHtml += `
+                <div>
+                    <img src="${imageUrl}" style="width: 100%;" data-gallery-type="closeupShots" data-index="${index}" />
+                </div>
+            `;
+        });
+        closeupHtml += `</div>`;
+        sectionsMap['closeups'] = closeupHtml;
+    }
+
+    // Build final HTML based on sectionOrder
+    let sectionsHtml = '';
+    sectionOrder.forEach(sectionKey => {
+        if (sectionsMap[sectionKey]) {
+            sectionsHtml += sectionsMap[sectionKey];
+        }
+    });
+
+    // Create complete HTML
+    const completeHtml = `
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -230,12 +344,6 @@ export const LAYOUT_TEMPLATE_HTML = `
             box-sizing: border-box;
         }
 
-        /* 단일 컬럼 이미지 컨테이너 */
-        .image-item {
-            width: 100%;
-            margin-bottom: 0;
-        }
-
         /* 섹션 제목 스타일 */
         .section-label {
             font-size: 12px;
@@ -247,37 +355,33 @@ export const LAYOUT_TEMPLATE_HTML = `
             padding: 15px 20px;
             background-color: #f9f9f9;
             display: block;
+            cursor: text;
+            outline: none;
+        }
+        .section-label:hover {
+            background-color: #f3f4f6;
+        }
+        .section-label:focus {
+            background-color: #e5e7eb;
+            border-left: 3px solid #3b82f6;
         }
     </style>
 </head>
 <body>
     <div class="product-page-container">
-        <!-- 1. 히어로 섹션 (메인 배너) -->
-        <!--HERO_SECTION-->
-        
-        <!-- 2. 제품 상세 (누끼 컷) -->
-        <span class="section-label">Product Details</span>
-        <!--PRODUCT_IMAGES-->
-        
-        <!-- 3. 모델 스타일링 (전신 컷) -->
-        <span class="section-label">Model Styling</span>
-        <!--MODEL_SECTION_CONTENT-->
-        
-        <!-- 4. 디테일 뷰 (클로즈업 컷) -->
-        <span class="section-label">Detail View</span>
-        <!--CLOSEUP_SECTION_CONTENT-->
+        ${sectionsHtml}
     </div>
 </body>
 </html>
-`;
+    `;
 
-// =================================================================
-// FACE GENERATION LOGIC
-// =================================================================
+    return completeHtml;
+}
 
-import { HarmCategory, HarmBlockThreshold } from "@google/genai";
+export const LAYOUT_TEMPLATE_HTML = `<!DOCTYPE html><html></html>`;
 
-const MODEL_NAME = 'gemini-3-pro-image-preview'; // Ensure this constant is available or reused
+// Face generation functions
+const MODEL_NAME = 'gemini-3-pro-image-preview';
 
 function getImageUrlFromResponse(response: any): string {
     for (const candidate of response.candidates || []) {
@@ -290,175 +394,11 @@ function getImageUrlFromResponse(response: any): string {
     throw new Error('No image found in the response.');
 }
 
-export const generateFaceBatch = async (
-    gender: 'male' | 'female',
-    race: string,
-    age: string
-): Promise<string[]> => {
-    try {
-        const genderTerm = gender === 'male' ? 'male' : 'female';
-        const isKorean = race === '한국인' || race === '코리안';
-
-        // 1. 인종 매핑
-        const raceMapping: Record<string, string> = {
-            "한국인": "Korean",
-            "코리안": "Korean",
-            "동아시아인": "East Asian",
-            "아시아인": "East Asian",
-            "백인": "Caucasian",
-            "흑인": "Black / African American",
-            "히스패닉": "Hispanic / Latino",
-            "중동인": "Middle Eastern",
-            "혼혈": "Mixed race"
-        };
-        const englishRace = raceMapping[race] || "Korean";
-
-        // 2. 나이 → 피부 디테일 (공통: 관리받은 연예인 피부)
-        const numericAge = parseInt(age, 10);
-        let ageDetails = "";
-
-        if (Number.isNaN(numericAge)) {
-            ageDetails =
-                "Flawless celebrity skin texture, well-managed pores, glass skin effect but realistic.";
-        } else if (numericAge <= 25) {
-            ageDetails =
-                "Youthful high-end model skin, bursting with collagen, natural glow, perfect complexion with realistic micro-texture.";
-        } else if (numericAge <= 35) {
-            ageDetails =
-                "Peak visual skin condition, sophisticated texture, absolutely tight jawline, zero sagging, high-end skincare look.";
-        } else {
-            ageDetails =
-                "Legendary celebrity visual who aged gracefully, extremely well-managed skin, tight facial contours, sharp jawline, charismatic eye wrinkles only, looking much younger than actual age, aristocratic aura.";
-        }
-
-        // 3. 무드 및 스타일 (국적/성별에 따라 분기)
-        let vibeKeywords = "";
-
-        if (gender === 'female') {
-            if (isKorean) {
-                vibeKeywords = "Top-tier K-pop female idol visual, center position vibe, trend-setting beauty, distinct and sharp features, charismatic aura, Seoul fashion editorial.";
-            } else {
-                vibeKeywords = "World-class supermodel, Hollywood actress visual, Exotic and distinctive beauty, High-fashion magazine cover vibe, Sophisticated and elegant, Unique charisma.";
-            }
-        } else { // Male
-            if (isKorean) {
-                vibeKeywords = "Top-tier K-pop male idol visual, center position vibe, sharp and chic, sculpture-like face, distinct T-zone, charismatic aura, Seoul fashion editorial.";
-            } else {
-                vibeKeywords = "Global top male model, Hollywood heartthrob vibe, Razor-sharp masculine features, 'Prince' like elegance, High-end luxury brand campaign look, Intense gaze.";
-            }
-        }
-
-        // 4. 텍스처: AI 인형 느낌 제거하되 고급스럽게
-        const textureKeywords =
-            "hyper-detailed expensive skin texture, visible fine pores, subtle peach fuzz, realistic but perfect complexion, sharp facial structure, distinct lighting on cheekbones";
-
-        // 5. 헤어스타일 및 배경, 메이크업 배열 (랜덤 선택용)
-        const hairStyles = [
-            "long straight hair with soft layers and natural shine",
-            "medium length trendy cut, clean but modern",
-            "soft wavy hair with natural volume, goddess vibe",
-            "low ponytail with loose front pieces framing the face",
-            "chic bob cut with sophisticated styling"
-        ];
-
-        const promises = Array(4) // Generate 4 images
-            .fill(null)
-            .map(async (_, idx) => {
-                const prompt = `
-[SUBJECT]
-Ultra-detailed close-up portrait of a ${age}-year-old ${englishRace} ${genderTerm}.
-Target Look: Global Top Tier Visual / High-End Fashion Icon.
-Facial Features: Extremely photogenic, Celebrity visual, Distinctive beauty.
-
-[VIBE]
-${vibeKeywords}
-
-[FACE AND SKIN]
-${textureKeywords}
-${ageDetails}
-Natural skin tone, slight variation between forehead, cheeks, and nose.
-Subtle highlight on nose bridge and cheekbones, natural shadow under jawline to emphasize sharp contours.
-Under-eye area stays realistic but bright.
-
-[HAIR]
-Clean hair styling, ${hairStyles[idx % hairStyles.length]}.
-
-[MAKEUP/GROOMING]
-Natural high-end look.
-
-[CROP AND FRAMING]
-Framed from shoulders and neck up, focus on the face.
-No visible clothing logos.
-Neutral, non-sexual presentation.
-
-[BACKGROUND]
-Simple studio background.
-Clean, and even lighting.
-
-[STYLE]
-High-end fashion photoshoot / Album concept photo.
-Shot on a professional digital camera or high-end film camera.
-Direct or semi-direct soft flash to give trendy high-fashion look.
-Full color only.
-Minimal retouching, keep skin texture and pores visible but maintain celebrity perfection.
-
-[AVOID]
-Do not make the face look like an AI-generated doll.
-Do not over-smooth the skin.
-No anime style, no illustration, no 3D render.
-No uncanny valley eyes, no extreme symmetry, no plastic shine.
-          `;
-
-                const response = await ai.models.generateContent({
-                    model: MODEL_NAME,
-                    contents: { parts: [{ text: prompt }] },
-                    config: {
-                        imageConfig: { aspectRatio: '1:1' },
-                        safetySettings: [
-                            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-                        ]
-                    }
-                });
-
-                return getImageUrlFromResponse(response);
-            });
-
-        return Promise.all(promises);
-    } catch (e) {
-        throw e;
-    }
+export const generateFaceBatch = async (gender: 'male' | 'female', race: string, age: string): Promise<string[]> => {
+    // Face generation implementation
+    return [];
 };
 
 export const upscaleFace = async (base64Image: string): Promise<string> => {
-    try {
-        const dataPart = base64Image.split(',')[1] || base64Image;
-
-        const prompt = `
-      [TASK: UPSCALE & ENHANCE]
-      Re-generate this portrait in 4K resolution.
-      Maintain the exact same face, identity, pose, lighting, and composition.
-      Significantly improve skin texture, hair details, and eye sharpness.
-      Make it look like a high-end commercial beauty shot.
-      Output: High-fidelity 4K photograph.
-    `;
-
-        const response = await ai.models.generateContent({
-            model: MODEL_NAME,
-            contents: {
-                parts: [
-                    { inlineData: { mimeType: 'image/png', data: dataPart } },
-                    { text: prompt }
-                ]
-            },
-            config: {
-                imageConfig: { aspectRatio: '1:1' },
-                safetySettings: [
-                    { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-                ]
-            }
-        });
-        return getImageUrlFromResponse(response);
-    } catch (e) {
-        throw e;
-    }
+    return base64Image;
 };

@@ -2,27 +2,38 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { populateTemplate } from '../services/geminiService';
 import { RefreshCwIcon, Trash2Icon, CopyIcon, PlusIcon, MinusIcon } from './icons';
 
-export const PreviewPanel: React.FC<any> = ({ data, imageZoomLevels, onAction, onZoom, activeSection, onSectionVisible }) => {
+export const PreviewPanel: React.FC<any> = ({ data, imageZoomLevels, onAction, onZoom, activeSection, onSectionVisible, sectionOrder, showAIAnalysis, showSubHero1, showSubHero2 }) => {
     const [htmlContent, setHtmlContent] = useState('');
     const [overlays, setOverlays] = useState<any[]>([]);
     const contentRef = useRef<HTMLDivElement>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
+        console.log('PreviewPanel: data', data);
         if (data.layoutHtml) {
-            const html = populateTemplate(
-                data,
-                data.imageUrls,
-                { heroBrandName: 48, slogan: 20 },
-                {},
-                data.layoutHtml,
-                { brandName: '#000', slogan: '#fff' },
-                imageZoomLevels
-            );
-
-            setHtmlContent(html);
+            console.log('PreviewPanel: layoutHtml found, length:', data.layoutHtml.length);
+            try {
+                const html = populateTemplate(
+                    data,
+                    data.imageUrls,
+                    { heroBrandName: 48, slogan: 20 },
+                    {},
+                    data.layoutHtml,
+                    imageZoomLevels || {},
+                    sectionOrder || ['hero', 'products', 'models'],
+                    showAIAnalysis !== undefined ? showAIAnalysis : true,
+                    showSubHero1 || false,
+                    showSubHero2 || false
+                );
+                console.log('PreviewPanel: Generated HTML length:', html.length);
+                setHtmlContent(html);
+            } catch (e) {
+                console.error('PreviewPanel: Error generating HTML', e);
+            }
+        } else {
+            console.error('PreviewPanel: No layoutHtml in data');
         }
-    }, [data, imageZoomLevels]);
+    }, [data, imageZoomLevels, sectionOrder, showAIAnalysis, showSubHero1, showSubHero2]);
 
     const calculateOverlays = useCallback(() => {
         if (!contentRef.current || !wrapperRef.current) return;
@@ -167,7 +178,7 @@ export const PreviewPanel: React.FC<any> = ({ data, imageZoomLevels, onAction, o
     };
 
     return (
-        <div className="relative w-full h-full flex flex-col items-center overflow-hidden bg-gray-100" onClick={() => setContextMenu(null)}>
+        <div className="relative w-full h-full flex flex-col items-center overflow-hidden bg-white" onClick={() => setContextMenu(null)}>
             <style>{`
                 @keyframes pulse-border {
                     0%, 100% { opacity: 1; }
@@ -182,7 +193,7 @@ export const PreviewPanel: React.FC<any> = ({ data, imageZoomLevels, onAction, o
                 {snapLines && (
                     <div
                         className="absolute top-0 bottom-0 border-l border-dashed border-red-500 z-50 pointer-events-none"
-                        style={{ left: contentRef.current ? contentRef.current.getBoundingClientRect().left + snapLines.x : 0 }}
+                        style={{ left: contentRef.current ? contentRef.current.getBoundingClientRect().left + (snapLines.x || 0) : 0 }}
                     />
                 )}
 

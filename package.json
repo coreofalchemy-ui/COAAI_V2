@@ -22,7 +22,7 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
-    "framer-motion": "^12.23.22",
+    "framer-motion": "^12.23.25",
     "html-to-image": "^1.11.13",
     "html2canvas": "^1.4.1",
     "immer": "^10.1.3",

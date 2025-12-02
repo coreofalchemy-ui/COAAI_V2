@@ -190,10 +190,10 @@ export default function StartScreen({ onGenerate, isLoading }: any) {
                 </button>
                 <button
                     onClick={() => onGenerate(pFiles, mFiles, 'frame')}
-                    disabled={isLoading || pFiles.length === 0}
-                    className="px-12 py-5 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-300 text-white text-xl font-bold rounded-2xl shadow-xl hover:shadow-2xl transition-all transform hover:-translate-y-1 disabled:hover:translate-y-0 disabled:cursor-not-allowed"
+                    disabled={isLoading}
+                    className="px-12 py-5 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white text-xl font-bold rounded-2xl shadow-xl hover:shadow-2xl transition-all transform hover:-translate-y-1 disabled:hover:translate-y-0 disabled:cursor-not-allowed"
                 >
-                    프레임만
+                    프레임만 생성
                 </button>
             </div>
 
@@ -204,7 +204,7 @@ export default function StartScreen({ onGenerate, isLoading }: any) {
                 <ul className="text-base text-blue-800 space-y-2">
                     <li>• <strong>원본 생성:</strong> 제품+모델 → 6장 컷 병렬 생성</li>
                     <li>• <strong>스튜디오 생성:</strong> 스튜디오 배경 → 6장 컷 생성</li>
-                    <li>• <strong>프레임만:</strong> HTML 템플릿 + 텍스트만 생성</li>
+                    <li>• <strong>프레임만 생성:</strong> HTML 템플릿 + 텍스트만 생성 (제품 이미지 선택 사항)</li>
                     <li>• <strong>드래그 앤 드롭:</strong> 파일을 직접 드래그하여 빠르게 업로드</li>
                 </ul>
             </div>
