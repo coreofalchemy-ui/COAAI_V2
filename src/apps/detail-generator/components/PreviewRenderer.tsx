@@ -3,6 +3,7 @@ import { RefreshCwIcon, Trash2Icon, CopyIcon, PlusIcon, MinusIcon } from './icon
 
 export interface TextElement {
     id: string;
+    sectionId: string; // The section this text belongs to
     content: string;
     top: number;
     left: number;
@@ -10,6 +11,9 @@ export interface TextElement {
     height: number;
     fontSize: number;
     fontFamily: string;
+    color: string;
+    fontWeight: string;
+    textAlign: 'left' | 'center' | 'right';
 }
 
 interface PreviewRendererProps {

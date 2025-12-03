@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { generateAICopywriting } from '../services/geminiAICopywriter';
 import ModelChapterPanel from './ModelChapterPanel';
 import ProductEnhancementPanel from './ProductEnhancementPanel';
+import { TextElement } from './PreviewRenderer';
 
 interface AdjustmentPanelProps {
     data: any;
@@ -9,11 +10,16 @@ interface AdjustmentPanelProps {
     showAIAnalysis?: boolean;
     onToggleAIAnalysis?: () => void;
     onAddSection?: () => void;
+    activeSection?: string;
+    textElements?: TextElement[];
+    onAddTextElement?: (text: TextElement) => void;
+    onUpdateTextElement?: (id: string, prop: keyof TextElement, value: any) => void;
+    onDeleteTextElement?: (id: string) => void;
+    onAddSpacerSection?: () => void;
 }
 
 type Section = 'hero' | 'products' | 'models' | 'closeup';
 
-// Helper function to generate standalone HTML for hero section
 const generateStandaloneHeroHTML = (data: any): string => {
     const content = data.heroTextContent || {};
     return `<!DOCTYPE html>
@@ -81,10 +87,17 @@ export default function AdjustmentPanel({
     onUpdate,
     showAIAnalysis,
     onToggleAIAnalysis,
-    onAddSection
+    onAddSection,
+    activeSection: previewActiveSection,
+    textElements = [],
+    onAddTextElement,
+    onUpdateTextElement,
+    onDeleteTextElement,
+    onAddSpacerSection
 }: AdjustmentPanelProps) {
     const [activeSection, setActiveSection] = useState<Section>('hero');
     const [isGeneratingAI, setIsGeneratingAI] = useState(false);
+    const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
 
     const updateHeroContent = (field: string, value: string) => {
         onUpdate({
@@ -119,6 +132,28 @@ export default function AdjustmentPanel({
             setIsGeneratingAI(false);
         }
     };
+
+    const handleAddText = () => {
+        if (!onAddTextElement) return;
+        const newText: TextElement = {
+            id: `text-${Date.now()}`,
+            sectionId: previewActiveSection || 'hero',
+            content: '텍스트를 입력하세요',
+            top: 50,
+            left: 50,
+            width: 200,
+            height: 50,
+            fontSize: 16,
+            fontFamily: 'Noto Sans KR',
+            color: '#000000',
+            fontWeight: 'normal',
+            textAlign: 'left'
+        };
+        onAddTextElement(newText);
+        setSelectedTextId(newText.id);
+    };
+
+    const selectedText = textElements.find(t => t.id === selectedTextId);
 
     return (
         <div className="h-full flex flex-col bg-white">
@@ -264,8 +299,6 @@ export default function AdjustmentPanel({
                                                 onChange={(e) => updateHeroContent('specOutsole', e.target.value)}
                                             />
                                         </div>
-                                    </div>
-                                    <div className="mt-2 grid grid-cols-2 gap-2">
                                         <div>
                                             <label className="text-[10px] text-gray-600">Origin</label>
                                             <input
@@ -354,11 +387,123 @@ export default function AdjustmentPanel({
                         <ModelChapterPanel data={data} onUpdate={onUpdate} />
                     </div>
                 )}
-
-                {/* Closeup Section */}
+                {/* Closeup Section (Text Editor) */}
                 {activeSection === 'closeup' && (
                     <div className="space-y-4">
-                        {/* Manual image management removed as per request */}
+                        <div className="bg-white border rounded-xl p-4 shadow-sm">
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="font-bold text-gray-800">텍스트 편집</h3>
+                                <button
+                                    onClick={handleAddText}
+                                    className="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded hover:bg-blue-700 flex items-center gap-1"
+                                >
+                                    <span>+</span> 텍스트 추가
+                                </button>
+                            </div>
+
+                            <div className="text-xs text-gray-500 mb-4 bg-gray-50 p-2 rounded">
+                                현재 선택된 섹션: <span className="font-bold text-blue-600">{previewActiveSection || '없음'}</span>
+                                <br />텍스트를 추가하면 현재 보이는 섹션에 추가됩니다.
+                            </div>
+
+                            {/* Text List */}
+                            <div className="space-y-2 mb-4 max-h-[200px] overflow-y-auto">
+                                {textElements.map(text => (
+                                    <div
+                                        key={text.id}
+                                        onClick={() => setSelectedTextId(text.id)}
+                                        className={`p-2 border rounded cursor-pointer flex justify-between items-center ${selectedTextId === text.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}
+                                    >
+                                        <span className="text-xs truncate max-w-[150px]">{text.content}</span>
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); onDeleteTextElement?.(text.id); }}
+                                            className="text-gray-400 hover:text-red-500"
+                                        >
+                                            🗑️
+                                        </button>
+                                    </div>
+                                ))}
+                                {textElements.length === 0 && (
+                                    <div className="text-center text-gray-400 text-xs py-4">
+                                        추가된 텍스트가 없습니다.
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Editor */}
+                            {selectedText && onUpdateTextElement && (
+                                <div className="border-t pt-4 space-y-3">
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-700 mb-1">내용</label>
+                                        <textarea
+                                            className="w-full border p-2 rounded text-sm"
+                                            rows={3}
+                                            value={selectedText.content}
+                                            onChange={(e) => onUpdateTextElement(selectedText.id, 'content', e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-700 mb-1">크기 (px)</label>
+                                            <input
+                                                type="number"
+                                                className="w-full border p-2 rounded text-sm"
+                                                value={selectedText.fontSize}
+                                                onChange={(e) => onUpdateTextElement(selectedText.id, 'fontSize', parseInt(e.target.value))}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-700 mb-1">색상</label>
+                                            <input
+                                                type="color"
+                                                className="w-full h-[38px] border p-1 rounded"
+                                                value={selectedText.color || '#000000'}
+                                                onChange={(e) => onUpdateTextElement(selectedText.id, 'color', e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-700 mb-1">서체</label>
+                                        <select
+                                            className="w-full border p-2 rounded text-sm"
+                                            value={selectedText.fontFamily}
+                                            onChange={(e) => onUpdateTextElement(selectedText.id, 'fontFamily', e.target.value)}
+                                        >
+                                            <option value="Noto Sans KR">Noto Sans KR</option>
+                                            <option value="Noto Serif KR">Noto Serif KR</option>
+                                            <option value="Spoqa Han Sans Neo">Spoqa Han Sans Neo</option>
+                                        </select>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-700 mb-1">굵기</label>
+                                            <select
+                                                className="w-full border p-2 rounded text-sm"
+                                                value={selectedText.fontWeight || 'normal'}
+                                                onChange={(e) => onUpdateTextElement(selectedText.id, 'fontWeight', e.target.value)}
+                                            >
+                                                <option value="normal">Normal</option>
+                                                <option value="bold">Bold</option>
+                                                <option value="100">Thin</option>
+                                                <option value="900">Black</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-700 mb-1">정렬</label>
+                                            <select
+                                                className="w-full border p-2 rounded text-sm"
+                                                value={selectedText.textAlign || 'left'}
+                                                onChange={(e) => onUpdateTextElement(selectedText.id, 'textAlign', e.target.value)}
+                                            >
+                                                <option value="left">Left</option>
+                                                <option value="center">Center</option>
+                                                <option value="right">Right</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 )}
             </div>

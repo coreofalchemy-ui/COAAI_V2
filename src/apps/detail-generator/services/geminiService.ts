@@ -125,6 +125,43 @@ export async function generateStudioImageSet(p: File[], m: File[], onProgress?: 
     return { modelShots: [masterAsset, ...modelVars], closeupShots: closeupVars };
 }
 
+// [New] Advanced Campaign Synthesis (Preserve & Inpaint)
+export async function synthesizeCampaignImage(
+    baseModelUrl: string,
+    referenceImageUrl: string,
+    promptOverride?: string
+): Promise<string> {
+    const basePart = urlToPart(baseModelUrl);
+    const referencePart = urlToPart(referenceImageUrl);
+
+    // User's requested strategy:
+    // IMAGE 1 (Target) = Fashion Model (Base Canvas)
+    // IMAGE 2 (Source) = Face/Reference (Paint)
+    // Prompt: Preserve Image 1, Inpaint from Image 2
+
+    const prompt = promptOverride || `
+**TASK: PRECISE FACE SWAP ON IMAGE 1**
+
+**INPUT IMAGES:**
+*   **IMAGE 1 [PRIMARY CANVAS]**: Fashion Model. **THIS IS THE BASE IMAGE.**
+*   **IMAGE 2 [SOURCE REFERENCE]**: Face ID.
+
+**STRICT INSTRUCTIONS:**
+1.  **BASE IMAGE PRESERVATION**:
+    *   Output **MUST** look exactly like **IMAGE 1**.
+    *   **DO NOT** change the head size or jawline.
+    *   **DO NOT** change pose or background.
+
+2.  **BLENDING**:
+    *   Use the skin texture, lighting from **IMAGE 1**.
+    *   Inpaint features from **IMAGE 2** into **IMAGE 1**.
+    *   Maintain the exact identity and features of **IMAGE 2** face, but blended into **IMAGE 1** context.
+`;
+
+    // Order: [Base, Reference]
+    return generateImage(prompt, [{ text: "IMAGE 1 (BASE):" }, basePart, { text: "IMAGE 2 (REFERENCE):" }, referencePart]);
+}
+
 export function populateTemplate(
     data: any, imageUrls: any, fontSizes: any, fontStyles: any, layoutHtml: string,
     imageZoomLevels: any = {}, sectionOrder: string[] = ['hero'],

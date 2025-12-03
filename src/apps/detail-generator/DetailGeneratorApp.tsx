@@ -3,7 +3,7 @@ import StartScreen from './components/StartScreen';
 import AdjustmentPanel from './components/AdjustmentPanel';
 import { PreviewPanel } from './components/PreviewPanel';
 import { NavigationMinimap } from './components/NavigationMinimap';
-import { generateTextContentOnly, generateInitialOriginalSet, generateStudioImageSet, LAYOUT_TEMPLATE_HTML, populateTemplate } from './services/geminiService';
+import { generateTextContentOnly, generateInitialOriginalSet, generateStudioImageSet, LAYOUT_TEMPLATE_HTML, populateTemplate, synthesizeCampaignImage } from './services/geminiService';
 import { TextElement } from './components/PreviewRenderer';
 import { SimpleContextMenu } from './components/SimpleContextMenu';
 
@@ -100,6 +100,8 @@ export default function DetailGeneratorApp() {
         else setPreviewWidth('100%');
     };
 
+    const [sectionHeights, setSectionHeights] = useState<{ [key: string]: number }>({});
+
     const handleAddSection = () => {
         const newSectionId = `custom-${Date.now()}`;
         setSectionOrder(prev => [...prev, newSectionId]);
@@ -110,6 +112,90 @@ export default function DetailGeneratorApp() {
                 [newSectionId]: PLACEHOLDER_ASSET.url
             }
         }));
+    };
+
+    const handleAddSpacerSection = () => {
+        const newSectionId = `spacer-${Date.now()}`;
+        // Insert after hero
+        setSectionOrder(prev => {
+            const newOrder = [...prev];
+            const heroIndex = newOrder.indexOf('hero');
+            if (heroIndex !== -1) {
+                newOrder.splice(heroIndex + 1, 0, newSectionId);
+            } else {
+                newOrder.push(newSectionId);
+            }
+            return newOrder;
+        });
+        setSectionHeights(prev => ({ ...prev, [newSectionId]: 100 })); // Default 100px
+        setGeneratedData((prev: any) => ({
+            ...prev,
+            imageUrls: {
+                ...prev.imageUrls,
+                [newSectionId]: '' // Empty for spacer
+            }
+        }));
+    };
+
+    const handleUpdateSectionHeight = (sectionId: string, height: number) => {
+        setSectionHeights(prev => ({ ...prev, [sectionId]: height }));
+    };
+
+    // Image Transform State (Scale, X, Y)
+    const [imageTransforms, setImageTransforms] = useState<{ [key: string]: { scale: number, x: number, y: number } }>({});
+
+    const handleUpdateImageTransform = (sectionId: string, transform: { scale: number, x: number, y: number }) => {
+        setImageTransforms(prev => ({
+            ...prev,
+            [sectionId]: transform
+        }));
+    };
+
+    // Model Hold State
+    const [heldSections, setHeldSections] = useState<Set<string>>(new Set());
+
+    const handleToggleHold = (sectionId: string) => {
+        setHeldSections(prev => {
+            const next = new Set(prev);
+            if (next.has(sectionId)) {
+                next.delete(sectionId);
+            } else {
+                next.add(sectionId);
+            }
+            return next;
+        });
+    };
+
+    // AI Composite Image Handler
+    const handleCompositeImage = async (sectionId: string, droppedFile: File) => {
+        console.log('Composite Image:', sectionId, droppedFile);
+
+        // 1. Get Base Image URL (from current section)
+        const baseImageUrl = generatedData.imageUrls[sectionId];
+        if (!baseImageUrl) {
+            alert("베이스 이미지가 없습니다.");
+            return;
+        }
+
+        setLoading(true);
+        try {
+            // 2. Convert Dropped File to Data URL
+            const referenceImageUrl = await fileToDataUrl(droppedFile);
+
+            // 3. Call Gemini Service
+            const compositeImageUrl = await synthesizeCampaignImage(baseImageUrl, referenceImageUrl);
+
+            // 4. Update Section with New Image
+            handleAction('updateImage', sectionId, 0, compositeImageUrl);
+
+            // Optional: Notify success
+            // alert("AI 합성이 완료되었습니다.");
+        } catch (e) {
+            console.error(e);
+            alert("합성 오류: " + e);
+        } finally {
+            setLoading(false);
+        }
     };
 
     const handleGenerate = async (pFiles: File[], mFiles: File[], mode: string) => {
@@ -232,6 +318,20 @@ export default function DetailGeneratorApp() {
 
 
 
+    const handleDeleteSection = (sectionId: string) => {
+        if (confirm('정말 이 섹션을 삭제하시겠습니까?')) {
+            setSectionOrder(prev => prev.filter(id => id !== sectionId));
+            // Optional: Cleanup data associated with the section
+            setGeneratedData(prev => {
+                const newData = { ...prev };
+                if (newData.imageUrls) {
+                    delete newData.imageUrls[sectionId];
+                }
+                return newData;
+            });
+        }
+    };
+
     return (
         <div
             className="flex flex-col h-screen bg-gray-50 overflow-hidden font-sans pt-[60px]"
@@ -266,6 +366,12 @@ export default function DetailGeneratorApp() {
                                     onUpdate={(newData: any) => setGeneratedData(newData)}
                                     showAIAnalysis={showAIAnalysis}
                                     onToggleAIAnalysis={() => setShowAIAnalysis(prev => !prev)}
+                                    activeSection={activeSection}
+                                    textElements={textElements}
+                                    onAddTextElement={handleAddTextElement}
+                                    onUpdateTextElement={handleUpdateTextElement}
+                                    onDeleteTextElement={handleDeleteTextElement}
+                                    onAddSpacerSection={handleAddSpacerSection}
                                 />
                             </div>
                         </div>
@@ -340,14 +446,17 @@ export default function DetailGeneratorApp() {
                                         onDeleteTextElement={handleDeleteTextElement}
                                         onUpdateAllTextElements={handleUpdateAllTextElements}
                                         onContextMenu={(e, type, index, section) => {
-                                            setContextMenu({
-                                                visible: true,
-                                                x: e.clientX,
-                                                y: e.clientY,
-                                                targetId: `${section}-${index}`
-                                            });
+                                            // Handle custom context menu in PreviewPanel directly
                                         }}
                                         lockedImages={new Set()}
+                                        sectionHeights={sectionHeights}
+                                        onUpdateSectionHeight={handleUpdateSectionHeight}
+                                        imageTransforms={imageTransforms}
+                                        onUpdateImageTransform={handleUpdateImageTransform}
+                                        onDeleteSection={handleDeleteSection}
+                                        heldSections={heldSections}
+                                        onToggleHold={handleToggleHold}
+                                        onCompositeImage={handleCompositeImage}
                                     />
                                 </div>
                             </div>
