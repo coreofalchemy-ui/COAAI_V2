@@ -25,6 +25,7 @@ interface PreviewRendererProps {
     onTextChange?: (textId: string, content: string) => void;
     contentRef?: React.RefObject<HTMLDivElement | null>;
     onContextMenu?: (e: React.MouseEvent, type: string, index: number, section: string) => void;
+    isDragging?: boolean;
 }
 
 export const PreviewRenderer: React.FC<PreviewRendererProps> = ({
@@ -38,7 +39,8 @@ export const PreviewRenderer: React.FC<PreviewRendererProps> = ({
     onResizeMouseDown,
     onTextChange,
     contentRef,
-    onContextMenu
+    onContextMenu,
+    isDragging = false
 }) => {
     return (
         <div className="relative w-full h-full">
@@ -103,29 +105,18 @@ export const PreviewRenderer: React.FC<PreviewRendererProps> = ({
 
             {/* Overlays - only visible in interactive mode */}
             {interactive && overlays.map((o, i) => (
-                <div key={i} className="absolute group z-20 hover:ring-4 ring-blue-500/50 rounded-lg transition-all" style={{ top: o.top, left: o.left, width: o.width, height: o.height }}>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 bg-black/60 transition-opacity backdrop-blur-sm rounded-lg">
-                        <div className="flex gap-2 mb-2">
-                            <button onClick={() => onAction?.('regenerate', o.type, o.index)} className="p-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full transition-all shadow-lg hover:scale-110">
-                                <RefreshCwIcon className="w-5 h-5" />
-                            </button>
-                            <button onClick={() => onAction?.('duplicate', o.type, o.index)} className="p-2.5 bg-green-600 hover:bg-green-700 text-white rounded-full transition-all shadow-lg hover:scale-110">
-                                <CopyIcon className="w-5 h-5" />
-                            </button>
-                            <button onClick={() => onAction?.('delete', o.type, o.index)} className="p-2.5 bg-red-600 hover:bg-red-700 text-white rounded-full transition-all shadow-lg hover:scale-110">
-                                <Trash2Icon className="w-5 h-5" />
-                            </button>
-                        </div>
-                        <div className="flex gap-2">
-                            <button onClick={() => onZoom?.(`${o.type}-${o.index}`, 'in')} className="p-1.5 bg-white/30 hover:bg-white/40 text-white rounded transition-all">
-                                <PlusIcon className="w-4 h-4" />
-                            </button>
-                            <button onClick={() => onZoom?.(`${o.type}-${o.index}`, 'out')} className="p-1.5 bg-white/30 hover:bg-white/40 text-white rounded transition-all">
-                                <MinusIcon className="w-4 h-4" />
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <div
+                    key={i}
+                    className={`absolute z-20 cursor-context-menu ${interactive && isDragging ? 'pointer-events-none' : ''}`}
+                    style={{ top: o.top, left: o.left, width: o.width, height: o.height }}
+                    data-overlay-type={o.type}
+                    data-overlay-index={o.index}
+                    onContextMenu={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onContextMenu?.(e, o.type, o.index, o.type);
+                    }}
+                />
             ))}
         </div>
     );

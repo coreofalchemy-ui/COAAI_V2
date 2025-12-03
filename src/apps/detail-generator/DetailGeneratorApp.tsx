@@ -3,7 +3,7 @@ import StartScreen from './components/StartScreen';
 import AdjustmentPanel from './components/AdjustmentPanel';
 import { PreviewPanel } from './components/PreviewPanel';
 import { NavigationMinimap } from './components/NavigationMinimap';
-import { generateTextContentOnly, generateInitialOriginalSet, generateStudioImageSet, LAYOUT_TEMPLATE_HTML } from './services/geminiService';
+import { generateTextContentOnly, generateInitialOriginalSet, generateStudioImageSet, LAYOUT_TEMPLATE_HTML, populateTemplate } from './services/geminiService';
 import { TextElement } from './components/PreviewRenderer';
 import { SimpleContextMenu } from './components/SimpleContextMenu';
 
@@ -62,6 +62,36 @@ export default function DetailGeneratorApp() {
         console.log('Section Order Updated:', sectionOrder);
     }, [sectionOrder]);
 
+    // Generate HTML for Minimap Thumbnail
+    useEffect(() => {
+        if (generatedData && generatedData.layoutHtml) {
+            try {
+                const html = populateTemplate(
+                    generatedData,
+                    generatedData.imageUrls,
+                    { heroBrandName: 48, slogan: 20 },
+                    {},
+                    generatedData.layoutHtml,
+                    imageZoomLevels || {},
+                    sectionOrder || ['hero'],
+                    showAIAnalysis
+                );
+
+                // Inject styles
+                const styleBlock = `
+                    <style>
+                        @import url('https://cdn.jsdelivr.net/gh/spoqa/spoqa-han-sans@latest/css/SpoqaHanSansNeo.css');
+                        img { max-width: 100%; }
+                        body { margin: 0; padding: 0; overflow-x: hidden; }
+                    </style>
+                `;
+                setPreviewHtml(styleBlock + html);
+            } catch (e) {
+                console.error('Error generating HTML for minimap:', e);
+            }
+        }
+    }, [generatedData, sectionOrder, showAIAnalysis, imageZoomLevels]);
+
     const handleDeviceChange = (device: 'mobile' | 'tablet' | 'desktop' | 'responsive') => {
         setPreviewDevice(device);
         if (device === 'mobile') setPreviewWidth('640px');
@@ -86,53 +116,37 @@ export default function DetailGeneratorApp() {
         setLoading(true);
         try {
             let productUrls: string[] = [];
-            let modelShots = [PLACEHOLDER_ASSET], closeupShots = [PLACEHOLDER_ASSET];
-            let textData = { textContent: {}, specContent: {}, heroTextContent: {}, noticeContent: {} };
+            // Text data structure
+            let textData = {
+                textContent: {},
+                specContent: {},
+                heroTextContent: {
+                    productName: 'Sample Product',
+                    brandLine: 'BRAND NAME',
+                    subName: 'Color / Model',
+                    stylingMatch: '스타일링 매치 설명이 들어갑니다.',
+                    craftsmanship: '제작 공정 및 소재 설명이 들어갑니다.',
+                    technology: '핵심 기술 설명이 들어갑니다.'
+                },
+                noticeContent: {}
+            };
 
-            if (mode === 'frame') {
-                // Frame mode: Show uploaded images in preview but skip AI text generation
-                if (pFiles.length > 0) {
-                    productUrls = await Promise.all(pFiles.map(fileToDataUrl));
-                }
-                // Use default text placeholders (no AI generation)
-                textData = {
-                    textContent: {},
-                    specContent: {},
-                    heroTextContent: {
-                        productName: 'Sample Product',
-                        brandLine: 'BRAND NAME',
-                        subName: 'Color / Model',
-                        stylingMatch: '스타일링 매치 설명이 들어갑니다.',
-                        craftsmanship: '제작 공정 및 소재 설명이 들어갑니다.',
-                        technology: '핵심 기술 설명이 들어갑니다.'
-                    },
-                    noticeContent: {}
-                };
-            } else {
-                // Original/Studio mode: Process images and generate text
+            // Process images if any (just to have them available if needed, though we are simplifying)
+            if (pFiles.length > 0) {
                 productUrls = await Promise.all(pFiles.map(fileToDataUrl));
-                const textPromise = generateTextContentOnly(pFiles);
-                const imgPromise = mode === 'studio' ? generateStudioImageSet(pFiles, mFiles) : generateInitialOriginalSet(pFiles, mFiles);
-                const [txt, img] = await Promise.all([textPromise, imgPromise]);
-                textData = txt;
-                modelShots = img.modelShots;
-                closeupShots = img.closeupShots;
             }
 
-            // Initial section order based on available images
+            // Initial section order - ONLY HERO
             const initialSections = ['hero'];
-            if (pFiles.length > 0) initialSections.push('products');
-            if (mFiles.length > 0) initialSections.push('models');
 
             setGeneratedData({
                 ...textData,
                 imageUrls: {
-                    products: productUrls,
-                    modelShots,
-                    closeupShots,
-                    conceptShot: PLACEHOLDER_ASSET.url,
-                    subHero1: PLACEHOLDER_ASSET.url,
-                    subHero2: PLACEHOLDER_ASSET.url
+                    // Only keep necessary placeholders or empty arrays
+                    products: [],
+                    modelShots: [],
+                    closeupShots: [],
+                    // Custom sections will be added dynamically
                 },
                 layoutHtml: LAYOUT_TEMPLATE_HTML,
                 productFiles: pFiles,
@@ -150,15 +164,28 @@ export default function DetailGeneratorApp() {
 
     const handleAction = (action: string, type: any, index: any, arg?: any) => {
         if (action === 'updateImage') {
-            const sectionKey = type; // For custom sections, type is the sectionKey
+            const sectionKey = type;
             const newUrl = arg;
-            setGeneratedData((prev: any) => ({
-                ...prev,
-                imageUrls: {
-                    ...prev.imageUrls,
-                    [sectionKey]: newUrl
+
+            setGeneratedData((prev: any) => {
+                const newData = { ...prev };
+                const targetSection = newData.imageUrls[sectionKey];
+
+                if (Array.isArray(targetSection)) {
+                    // Handle array-based sections (products, modelShots, closeupShots)
+                    const newArray = [...targetSection];
+                    if (typeof newArray[index] === 'string') {
+                        newArray[index] = newUrl;
+                    } else {
+                        newArray[index] = { ...newArray[index], url: newUrl };
+                    }
+                    newData.imageUrls[sectionKey] = newArray;
+                } else {
+                    // Handle single string sections (hero, custom sections)
+                    newData.imageUrls[sectionKey] = newUrl;
                 }
-            }));
+                return newData;
+            });
         }
         console.log('Action:', action, type, index, arg);
     };
@@ -363,7 +390,10 @@ export default function DetailGeneratorApp() {
                 visible={contextMenu.visible}
                 onDelete={() => {
                     if (!contextMenu.targetId) return;
-                    const [section, indexStr] = contextMenu.targetId.split('-');
+                    // Fix parsing for sections with hyphens (e.g. custom-123-0)
+                    const lastDashIndex = contextMenu.targetId.lastIndexOf('-');
+                    const section = contextMenu.targetId.substring(0, lastDashIndex);
+                    const indexStr = contextMenu.targetId.substring(lastDashIndex + 1);
                     const index = parseInt(indexStr);
 
                     setGeneratedData((prev: any) => {
@@ -374,6 +404,10 @@ export default function DetailGeneratorApp() {
                             newData.imageUrls.modelShots = newData.imageUrls.modelShots.filter((_: any, i: number) => i !== index);
                         } else if (section === 'closeupShots' && newData.imageUrls.closeupShots) {
                             newData.imageUrls.closeupShots = newData.imageUrls.closeupShots.filter((_: any, i: number) => i !== index);
+                        } else if (section.startsWith('custom-')) {
+                            // Delete custom section
+                            delete newData.imageUrls[section];
+                            setSectionOrder(prevOrder => prevOrder.filter(s => s !== section));
                         }
                         return newData;
                     });
